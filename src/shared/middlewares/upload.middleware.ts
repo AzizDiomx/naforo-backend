@@ -1,21 +1,43 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { env } from '@/config/env';
 import { BadRequestError } from '../errors/AppError';
 
-// Ensure upload directory exists on boot
-const uploadDir = path.join(process.cwd(), env.UPLOAD_DIR);
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-  // Create folders for sub-types
-  fs.mkdirSync(path.join(uploadDir, 'invoices'), { recursive: true });
-  fs.mkdirSync(path.join(uploadDir, 'receipts'), { recursive: true });
+// Serverless environments (Vercel / AWS Lambda) have a read-only filesystem at /var/task.
+// Only /tmp is writable.
+export const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+export const uploadDir = isServerless
+  ? path.join(os.tmpdir(), env.UPLOAD_DIR || 'uploads')
+  : path.join(process.cwd(), env.UPLOAD_DIR || 'uploads');
+
+// Ensure upload directories exist safely on boot without throwing
+try {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+  const invoicesDir = path.join(uploadDir, 'invoices');
+  if (!fs.existsSync(invoicesDir)) {
+    fs.mkdirSync(invoicesDir, { recursive: true });
+  }
+  const receiptsDir = path.join(uploadDir, 'receipts');
+  if (!fs.existsSync(receiptsDir)) {
+    fs.mkdirSync(receiptsDir, { recursive: true });
+  }
+} catch (error) {
+  // Gracefully ignore filesystem creation errors on read-only environments
 }
 
 const storage = multer.diskStorage({
   destination: (req, file, callback) => {
+    try {
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+    } catch (_) {}
     callback(null, uploadDir);
   },
   filename: (req, file, callback) => {

@@ -10,6 +10,12 @@ import { processExchangeRateJob } from './exchange-rate.job';
 import { processSubscriptionAlertJob } from './subscription-alert.job';
 
 export function initializeJobs(): void {
+  const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  if (isServerless) {
+    logger.info('Serverless environment detected (Vercel): skipping Bull queue workers and cron schedules');
+    return;
+  }
+
   logger.info('Initializing Bull Queue processors...');
 
   // 1. Register Processors

@@ -9,6 +9,7 @@ import { pdfQueue, emailQueue } from '@/queues';
 import { logger } from '@/config/logger';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { PaginationQuery, PaginationMeta } from '@/shared/types';
@@ -116,12 +117,17 @@ export class ReceiptsService {
 
     const pdfName = `${receipt.receiptNumber}.pdf`;
     const relativePath = `/uploads/receipts/${pdfName}`;
-    const receiptsDir = path.join(process.cwd(), 'uploads', 'receipts');
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const receiptsDir = isServerless
+      ? path.join(os.tmpdir(), 'uploads', 'receipts')
+      : path.join(process.cwd(), 'uploads', 'receipts');
     
-    // Ensure receipts directory exists
-    if (!fs.existsSync(receiptsDir)) {
-      fs.mkdirSync(receiptsDir, { recursive: true });
-    }
+    // Ensure receipts directory exists safely
+    try {
+      if (!fs.existsSync(receiptsDir)) {
+        fs.mkdirSync(receiptsDir, { recursive: true });
+      }
+    } catch (_) {}
 
     const absolutePath = path.join(receiptsDir, pdfName);
 

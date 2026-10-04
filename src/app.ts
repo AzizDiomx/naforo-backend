@@ -5,6 +5,7 @@ import compression from 'compression';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
+import os from 'os';
 import cookieParser from 'cookie-parser';
 import { env } from '@/config/env';
 import { errorMiddleware } from '@/shared/middlewares/error.middleware';
@@ -68,7 +69,11 @@ app.use(`${env.API_PREFIX}/auth/register`, authLimiter);
 app.use(`${env.API_PREFIX}/auth/forgot-password`, authLimiter);
 
 // 5. Static uploads directory serving
-app.use('/uploads', express.static(path.join(process.cwd(), env.UPLOAD_DIR)));
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const staticUploadsDir = isServerless
+  ? path.join(os.tmpdir(), env.UPLOAD_DIR || 'uploads')
+  : path.join(process.cwd(), env.UPLOAD_DIR || 'uploads');
+app.use('/uploads', express.static(staticUploadsDir));
 
 // 6. Mount central router
 app.use(env.API_PREFIX, router);

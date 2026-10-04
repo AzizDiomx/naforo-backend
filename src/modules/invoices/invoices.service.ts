@@ -7,6 +7,7 @@ import { emailQueue } from '@/queues';
 import { logger } from '@/config/logger';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import PDFDocument from 'pdfkit';
 import { PaginationQuery, PaginationMeta } from '@/shared/types';
 import { buildPaginationMeta } from '@/shared/helpers/pagination';
@@ -296,11 +297,16 @@ export class InvoicesService {
 
     const pdfName = `${invoice.invoiceNumber}.pdf`;
     const relativePath = `/uploads/invoices/${pdfName}`;
-    const invoicesDir = path.join(process.cwd(), 'uploads', 'invoices');
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const invoicesDir = isServerless
+      ? path.join(os.tmpdir(), 'uploads', 'invoices')
+      : path.join(process.cwd(), 'uploads', 'invoices');
 
-    if (!fs.existsSync(invoicesDir)) {
-      fs.mkdirSync(invoicesDir, { recursive: true });
-    }
+    try {
+      if (!fs.existsSync(invoicesDir)) {
+        fs.mkdirSync(invoicesDir, { recursive: true });
+      }
+    } catch (_) {}
 
     const absolutePath = path.join(invoicesDir, pdfName);
 
