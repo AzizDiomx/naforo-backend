@@ -10,6 +10,9 @@ export const prisma = new PrismaClient({
   ],
 });
 
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+
 // Setup event listeners for logging
 (prisma as any).$on('query', (e: any) => {
   logger.debug(`Prisma Query: ${e.query} | Params: ${e.params} | Duration: ${e.duration}ms`);
