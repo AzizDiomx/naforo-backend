@@ -13,6 +13,9 @@ import router from '@/routes';
 
 const app: Express = express();
 
+// Trust reverse proxy (Indispensable sur Vercel, AWS, Cloudflare, etc. pour X-Forwarded-For et rate-limiting)
+app.set('trust proxy', 1);
+
 // 1. Basic security & optimization middlewares
 app.use(helmet());
 app.use(cookieParser());
@@ -48,6 +51,7 @@ const globalLimiter = rateLimit({
   max: 1000, // limit each IP to 1000 requests per windowMs
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: 'Trop de requêtes effectuées depuis cette IP, veuillez réessayer après 15 minutes.',
 });
 app.use(globalLimiter);
@@ -58,6 +62,7 @@ const authLimiter = rateLimit({
   max: 10, // max 10 requests per 15 minutes per IP
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: {
     success: false,
     message: 'Trop de tentatives de connexion ou d\'accès depuis cette adresse IP. Veuillez patienter 15 minutes.'

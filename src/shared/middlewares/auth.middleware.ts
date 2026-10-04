@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import * as jwt from 'jsonwebtoken';
 import { env } from '@/config/env';
 import { redis } from '@/config/redis';
+import { logger } from '@/config/logger';
 import { UnauthorizedError, ForbiddenError } from '../errors/AppError';
 import { prisma } from '@/config/database';
 import { JwtPayload, AuthUser } from '../types';
@@ -30,9 +31,14 @@ export const authenticate = asyncHandler(
     }
 
     // Check if token is blacklisted in Redis (e.g. after logout)
-    const isBlacklisted = await redis.get(`blacklist:${token}`);
-    if (isBlacklisted) {
-      throw new UnauthorizedError('Accès non autorisé : Session révoquée.');
+    try {
+      const isBlacklisted = await redis.get(`blacklist:${token}`);
+      if (isBlacklisted) {
+        throw new UnauthorizedError('Accès non autorisé : Session révoquée.');
+      }
+    } catch (err) {
+      if (err instanceof UnauthorizedError) throw err;
+      logger.warn('Impossible de vérifier la révocation Redis, poursuite de l\'authentification...', { error: (err as any)?.message });
     }
 
     try {
@@ -107,10 +113,12 @@ export const optionalAuthenticate = asyncHandler(
 
     const token = authHeader.split(' ')[1];
 
-    const isBlacklisted = await redis.get(`blacklist:${token}`);
-    if (isBlacklisted) {
-      return next();
-    }
+    try {
+      const isBlacklisted = await redis.get(`blacklist:${token}`);
+      if (isBlacklisted) {
+        return next();
+      }
+    } catch (_) {}
 
     try {
       const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as JwtPayload;

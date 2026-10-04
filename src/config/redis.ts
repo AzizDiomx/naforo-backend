@@ -3,24 +3,92 @@ import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 
 // ---------------------------------------------------------------------------
-// Redis client
+// Environment detection
 // ---------------------------------------------------------------------------
-const redisOptions: RedisOptions | string = env.REDIS_URL
-  ? env.REDIS_URL
-  : {
-      host: env.REDIS_HOST,
-      port: env.REDIS_PORT,
-      password: env.REDIS_PASSWORD || undefined,
-      lazyConnect: false,
-      retryStrategy(times: number) {
-        const delay = Math.min(times * 50, 2000);
-        logger.warn(`Redis reconnect attempt #${times}, retrying in ${delay}ms`);
-        return delay;
-      },
-      maxRetriesPerRequest: 3,
-    };
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
-export const redis = typeof redisOptions === 'string' ? new Redis(redisOptions) : new Redis(redisOptions);
+// ---------------------------------------------------------------------------
+// Redis client factory with TLS SNI support
+// ---------------------------------------------------------------------------
+function buildRedisClient(): Redis {
+  const retryStrategy = (times: number) => {
+    if (isServerless && times > 3) {
+      logger.warn(`Redis max reconnection attempts reached (${times}), stopping retries.`);
+      return null;
+    }
+    const delay = Math.min(times * 100, 3000);
+    logger.warn(`Redis reconnect attempt #${times}, retrying in ${delay}ms`);
+    return delay;
+  };
+
+  const commonOptions: RedisOptions = {
+    maxRetriesPerRequest: 3,
+    connectTimeout: 10000,
+    retryStrategy,
+    lazyConnect: false,
+  };
+
+  if (env.REDIS_URL) {
+    try {
+      const parsedUrl = new URL(env.REDIS_URL);
+      const isRemoteHost = parsedUrl.hostname !== 'localhost' && parsedUrl.hostname !== '127.0.0.1';
+      const isTls =
+        parsedUrl.protocol === 'rediss:' ||
+        parsedUrl.hostname.includes('layerbase') ||
+        parsedUrl.hostname.includes('upstash') ||
+        parsedUrl.port === '6380' ||
+        process.env.REDIS_TLS === 'true';
+
+      const options: RedisOptions = {
+        ...commonOptions,
+      };
+
+      // Set TLS with SNI servername as required by Layerbase, Upstash, and cloud Redis providers
+      if (isTls || isRemoteHost) {
+        options.tls = {
+          servername: parsedUrl.hostname,
+        };
+      }
+
+      logger.info('Initializing Redis client with REDIS_URL', {
+        host: parsedUrl.hostname,
+        tls: Boolean(options.tls),
+        servername: options.tls ? (options.tls as any).servername : undefined,
+      });
+
+      return new Redis(env.REDIS_URL, options);
+    } catch (err) {
+      logger.error('Failed to parse REDIS_URL, falling back to direct connection string', { err });
+      return new Redis(env.REDIS_URL, commonOptions);
+    }
+  }
+
+  // Host / Port based configuration
+  const isRemote = env.REDIS_HOST !== 'localhost' && env.REDIS_HOST !== '127.0.0.1';
+  const isTls =
+    isRemote &&
+    (env.REDIS_HOST.includes('layerbase') ||
+      env.REDIS_HOST.includes('upstash') ||
+      env.REDIS_PORT === 6380 ||
+      process.env.REDIS_TLS === 'true');
+
+  const options: RedisOptions = {
+    host: env.REDIS_HOST,
+    port: env.REDIS_PORT,
+    password: env.REDIS_PASSWORD || undefined,
+    ...commonOptions,
+  };
+
+  if (isTls) {
+    options.tls = {
+      servername: env.REDIS_HOST,
+    };
+  }
+
+  return new Redis(options);
+}
+
+export const redis = buildRedisClient();
 
 // ---------------------------------------------------------------------------
 // Event listeners
