@@ -1,0 +1,50 @@
+services:
+  bailflow_db:
+    image: postgres:15-alpine
+    container_name: bailflow_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bailflow
+      POSTGRES_USER: bailflow
+      POSTGRES_PASSWORD: bailflow_secret
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - '5432:5432'
+    volumes:
+      - bailflow_db_data:/var/lib/postgresql/data
+    networks:
+      - bailflow_network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bailflow -d bailflow']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  bailflow_redis:
+    image: redis:7-alpine
+    container_name: bailflow_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --loglevel warning
+    ports:
+      - '6379:6379'
+    volumes:
+      - bailflow_redis_data:/data
+    networks:
+      - bailflow_network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  bailflow_db_data:
+    driver: local
+  bailflow_redis_data:
+    driver: local
+
+networks:
+  bailflow_network:
+    driver: bridge

@@ -1,0 +1,630 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Organizations (Multi-tenant)
+model Organization {
+  id               String            @id @default(uuid())
+  name             String
+  email            String?           @unique
+  phone            String?
+  address          String?
+  city             String?
+  country          String            @default("CI")
+  logoUrl          String?
+  plan             String            @default("starter")
+  isActive         Boolean           @default(true)
+  settings         Json?             @default("{}")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  users            User[]
+  properties       Property[]
+  tenantProfiles   TenantProfile[]
+  contracts        Contract[]
+  invoices         Invoice[]
+  payments         Payment[]
+  receipts         Receipt[]
+  notifications    Notification[]
+  incidents              Incident[]
+  documents              Document[]
+  auditLogs              AuditLog[]
+  accountingTransactions AccountingTransaction[]
+  securityDeposits       SecurityDeposit[]
+  subscriptions          Subscription[]
+  subscriptionPayments   SubscriptionPayment[]
+  chatThreads            ChatThread[]
+
+  @@map("organizations")
+}
+
+// Users
+model User {
+  id                      String                  @id @default(uuid())
+  organizationId          String?
+  organization            Organization?           @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  email                   String                  @unique
+  phone                   String?
+  passwordHash            String
+  firstName               String
+  lastName                String
+  role                    String                  // 'super_admin','admin','manager','accountant','owner','tenant','technician'
+  avatarUrl               String?
+  isActive                Boolean                 @default(true)
+  isEmailVerified         Boolean                 @default(false)
+  lastLoginAt             DateTime?
+  refreshTokenHash        String?
+  fcmToken                String?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  createdProperties       Property[]              @relation("PropertyCreator")
+  createdContracts        Contract[]              @relation("ContractCreator")
+  ownedContracts          Contract[]              @relation("ContractOwner")
+  declaredPayments        Payment[]               @relation("PaymentDeclarer")
+  validatedPayments       Payment[]               @relation("PaymentValidator")
+  assignedIncidents       Incident[]              @relation("IncidentAssignee")
+  uploadedDocuments          Document[]              @relation("DocumentUploader")
+  auditLogs                  AuditLog[]              @relation("UserAuditLogs")
+  notifications              Notification[]
+  notificationPreferences    NotificationPreference?
+  otpTokens                  OtpToken[]
+  tenantProfile              TenantProfile?
+  preferredCurrency          String                  @default("XOF") // XOF | EUR | USD | CAD
+  accountingEntries          AccountingTransaction[]  @relation("AccountingCreator")
+
+  @@map("users")
+}
+
+// Properties (Biens immobiliers)
+model Property {
+  id             String        @id @default(uuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parentId       String?
+  parent         Property?     @relation("PropertyHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children       Property[]    @relation("PropertyHierarchy")
+  name           String
+  type           String        // 'building','residence','villa','apartment','shop','office','parking'
+  address        String
+  city           String        @default("Abidjan")
+  country        String        @default("CI")
+  floor          Int?
+  areaSqm        Decimal?      @db.Decimal(10, 2)
+  rooms          Int?
+  bathrooms      Int?
+  description    String?
+  status         String        @default("available") // 'available','occupied','maintenance','reserved'
+  rentAmount     Decimal?      @db.Decimal(15, 2)
+  chargesAmount  Decimal?      @default(0) @db.Decimal(15, 2)
+  depositAmount  Decimal?      @default(0) @db.Decimal(15, 2)
+  photos         Json?         @default("[]")
+  amenities      Json?         @default("[]")
+  createdBy      String?
+  creator        User?         @relation("PropertyCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  contracts      Contract[]
+  invoices       Invoice[]
+  receipts       Receipt[]
+  incidents      Incident[]
+  accountingTransactions AccountingTransaction[]
+  chatThreads    ChatThread[]
+
+  @@unique([organizationId, name])
+  @@map("properties")
+}
+
+// Tenant Profiles (Profils locataires)
+model TenantProfile {
+  id                    String        @id @default(uuid())
+  userId                String?       @unique
+  user                  User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organizationId        String
+  organization          Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  firstName             String
+  lastName              String
+  email                 String?
+  phone                 String
+  nationalId            String?
+  profession            String?
+  employer              String?
+  monthlyIncome         Decimal?      @db.Decimal(15, 2)
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  reliabilityScore      Int           @default(100)
+  avatarUrl             String?
+  notes                 String?
+  isActive              Boolean       @default(true)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  contracts             Contract[]
+  invoices              Invoice[]
+  payments              Payment[]
+  receipts              Receipt[]
+  incidents             Incident[]
+  securityDeposits      SecurityDeposit[]
+  chatThreads           ChatThread[]
+
+  @@map("tenant_profiles")
+}
+
+// Contracts (Baux)
+model Contract {
+  id                     String        @id @default(uuid())
+  contractNumber         String        @unique
+  organizationId         String
+  organization           Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  propertyId             String
+  property               Property      @relation(fields: [propertyId], references: [id])
+  tenantProfileId        String
+  tenantProfile          TenantProfile @relation(fields: [tenantProfileId], references: [id])
+  ownerId                String?
+  owner                  User?         @relation("ContractOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  startDate              DateTime
+  endDate                DateTime?
+  rentAmount             Decimal       @db.Decimal(15, 2)
+  chargesAmount          Decimal       @default(0) @db.Decimal(15, 2)
+  depositAmount          Decimal       @default(0) @db.Decimal(15, 2)
+  cautionAmount          Decimal       @default(0) @db.Decimal(15, 2)
+  paymentDay             Int           @default(5)
+  status                 String        @default("active") // 'draft','active','expired','terminated','suspended'
+  paymentReminderEnabled Boolean       @default(true)
+  notes                  String?
+  documentUrl            String?
+  signedAt               DateTime?
+  terminatedAt           DateTime?
+  terminationReason      String?
+  createdBy              String?
+  creator                User?         @relation("ContractCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  invoices               Invoice[]
+  payments               Payment[]
+  receipts               Receipt[]
+  accountingTransactions AccountingTransaction[]
+  securityDeposit        SecurityDeposit?
+  chatThreads            ChatThread[]
+
+  @@map("contracts")
+}
+
+// Invoices (Factures)
+model Invoice {
+  id                String        @id @default(uuid())
+  invoiceNumber     String        @unique
+  organizationId    String
+  organization      Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contractId        String
+  contract          Contract      @relation(fields: [contractId], references: [id])
+  tenantProfileId   String
+  tenantProfile     TenantProfile @relation(fields: [tenantProfileId], references: [id])
+  propertyId        String
+  property          Property      @relation(fields: [propertyId], references: [id])
+  periodMonth       Int
+  periodYear        Int
+  dueDate           DateTime
+  rentAmount        Decimal       @db.Decimal(15, 2)
+  chargesAmount     Decimal       @default(0) @db.Decimal(15, 2)
+  penaltyAmount     Decimal       @default(0) @db.Decimal(15, 2)
+  totalAmount       Decimal       @db.Decimal(15, 2)
+  status            String        @default("pending") // 'pending','partial','paid','overdue','cancelled'
+  pdfUrl            String?
+  sentAt            DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  payments          Payment[]
+
+  @@map("invoices")
+}
+
+// Payments (Paiements)
+model Payment {
+  id                String        @id @default(uuid())
+  paymentReference  String        @unique
+  organizationId    String
+  organization      Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoiceId         String?
+  invoice           Invoice?      @relation(fields: [invoiceId], references: [id])
+  contractId        String
+  contract          Contract      @relation(fields: [contractId], references: [id])
+  tenantProfileId   String
+  tenantProfile     TenantProfile @relation(fields: [tenantProfileId], references: [id])
+  declaredBy        String?
+  declarer          User?         @relation("PaymentDeclarer", fields: [declaredBy], references: [id], onDelete: SetNull)
+  validatedBy       String?
+  validator         User?         @relation("PaymentValidator", fields: [validatedBy], references: [id], onDelete: SetNull)
+  amount            Decimal       @db.Decimal(15, 2)
+  paymentMethod     String        // 'orange_money','mtn_money','moov_money','wave','bank_transfer','cash','card'
+  transactionNumber String?
+  paymentDate       DateTime
+  proofUrl          String?
+  comment           String?
+  status            String        @default("pending") // 'pending','validated','rejected','complement_requested'
+  rejectionReason   String?
+  complementMessage String?
+  validatedAt       DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  receipts              Receipt[]
+  accountingTransaction AccountingTransaction?
+
+  @@map("payments")
+}
+
+// Receipts (Quittances)
+model Receipt {
+  id               String        @id @default(uuid())
+  receiptNumber    String        @unique
+  organizationId   String
+  organization     Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentId        String
+  payment          Payment       @relation(fields: [paymentId], references: [id])
+  contractId       String
+  contract         Contract      @relation(fields: [contractId], references: [id])
+  tenantProfileId  String
+  tenantProfile    TenantProfile @relation(fields: [tenantProfileId], references: [id])
+  propertyId       String
+  property         Property      @relation(fields: [propertyId], references: [id])
+  periodMonth      Int
+  periodYear       Int
+  amount           Decimal       @db.Decimal(15, 2)
+  qrCodeData       String
+  pdfUrl           String?
+  digitalSignature String
+  issuedAt         DateTime      @default(now())
+  createdAt        DateTime      @default(now())
+
+  @@map("receipts")
+}
+
+// Notifications
+model Notification {
+  id             String        @id @default(uuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type           String
+  title          String
+  message        String
+  data           Json?         @default("{}")
+  channels       Json?         @default("[]")
+  isRead         Boolean       @default(false)
+  sentEmail      Boolean       @default(false)
+  sentSms        Boolean       @default(false)
+  sentPush       Boolean       @default(false)
+  sentAt         DateTime?
+  createdAt      DateTime      @default(now())
+
+  @@map("notifications")
+}
+
+// Incidents
+model Incident {
+  id              String        @id @default(uuid())
+  incidentNumber  String        @unique
+  organizationId  String
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  propertyId      String
+  property        Property      @relation(fields: [propertyId], references: [id])
+  tenantProfileId String
+  tenantProfile   TenantProfile @relation(fields: [tenantProfileId], references: [id])
+  assignedTo      String?
+  assignee        User?         @relation("IncidentAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
+  type            String        // 'leak','breakdown','ac','electricity','plumbing','security','other'
+  title           String
+  description     String?
+  photos          Json?         @default("[]")
+  status          String        @default("open") // 'open','in_progress','resolved','closed'
+  priority        String        @default("medium") // 'low','medium','high','urgent'
+  resolutionNotes String?
+  resolvedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("incidents")
+}
+
+// Documents
+model Document {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  entityType     String
+  entityId       String
+  name           String
+  type           String
+  fileUrl        String
+  fileSize       Int?
+  mimeType       String?
+  uploadedBy     String?
+  uploader       User?        @relation("DocumentUploader", fields: [uploadedBy], references: [id], onDelete: SetNull)
+  createdAt      DateTime     @default(now())
+
+  @@map("documents")
+}
+
+// Audit Logs
+model AuditLog {
+  id             String        @id @default(uuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  userId         String?
+  user           User?         @relation("UserAuditLogs", fields: [userId], references: [id], onDelete: SetNull)
+  action         String
+  entityType     String?
+  entityId       String?
+  oldData        Json?
+  newData        Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime      @default(now())
+
+  @@map("audit_logs")
+}
+
+// Notification Preferences
+model NotificationPreference {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailEnabled       Boolean  @default(true)
+  smsEnabled         Boolean  @default(false)
+  pushEnabled        Boolean  @default(true)
+  reminderEnabled    Boolean  @default(true)
+  reminderDaysBefore Json?    @default("[15, 7, 3, 1]")
+  reminderDaysAfter  Json?    @default("[3, 7, 15]")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("notification_preferences")
+}
+
+// OTP Tokens
+model OtpToken {
+  id        String    @id @default(uuid())
+  userId    String?
+  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String
+  type      String    // 'email_verification','password_reset','2fa'
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("otp_tokens")
+}
+
+// =============================================================================
+// MODULE COMPTABILITÉ IMMOBILIÈRE
+// =============================================================================
+
+// Transactions Comptables (Revenus & Dépenses)
+model AccountingTransaction {
+  id              String   @id @default(uuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  propertyId      String?
+  property        Property?    @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  contractId      String?
+  contract        Contract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  // Lien automatique depuis les paiements validés
+  paymentId       String?      @unique
+  payment         Payment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  type            String       // 'REVENUE' | 'EXPENSE'
+  category        String       // loyer | penalite | reparation | impot | assurance | gardiennage | autre...
+  subCategory     String?      // Sous-catégorie libre saisie par l'utilisateur
+
+  label           String       // Libellé de l'écriture
+  amountXof       Decimal      @db.Decimal(15, 2)  // Montant en FCFA (source de vérité)
+
+  transactionDate DateTime
+  periodMonth     Int?
+  periodYear      Int?
+
+  paymentMethod   String?      // Moyen de règlement de la dépense
+  referenceNumber String?      // Numéro reçu / facture fournisseur
+
+  documentUrl     String?      // Justificatif uploadé (facture travaux, reçu impôt...)
+  notes           String?
+
+  // Seul le propriétaire (role: owner) peut créer des dépenses
+  createdBy       String
+  creator         User         @relation("AccountingCreator", fields: [createdBy], references: [id])
+
+  isAutomatic     Boolean      @default(false) // true = généré par le système (loyer validé)
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@map("accounting_transactions")
+}
+
+// Dépôts de Garantie
+model SecurityDeposit {
+  id              String   @id @default(uuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  contractId      String   @unique
+  contract        Contract @relation(fields: [contractId], references: [id])
+
+  tenantProfileId String
+  tenantProfile   TenantProfile @relation(fields: [tenantProfileId], references: [id])
+
+  amountReceivedXof  Decimal   @db.Decimal(15, 2)  // Montant reçu en FCFA
+  receivedAt         DateTime
+
+  // Restitution
+  amountReturnedXof  Decimal?  @db.Decimal(15, 2)
+  deductionAmountXof Decimal?  @db.Decimal(15, 2)  // Retenue pour dégâts
+  deductionReason    String?
+  deductionDocUrl    String?   // Photo ou facture des dégâts
+  returnedAt         DateTime?
+
+  status             String    @default("HELD")  // HELD | RETURNED | PARTIALLY_RETURNED
+
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@map("security_deposits")
+}
+
+// Taux de Change (FCFA vers devises étrangères)
+model ExchangeRate {
+  id             String   @id @default(uuid())
+  baseCurrency   String   @default("XOF")   // Toujours XOF (FCFA)
+  targetCurrency String   // EUR | USD | CAD
+  rate           Decimal  @db.Decimal(12, 8) // ex: 0.00152449 pour EUR
+  source         String   @default("api")   // 'api' | 'manual' | 'fixed'
+  fetchedAt      DateTime @default(now())
+
+  @@unique([baseCurrency, targetCurrency, fetchedAt])
+  @@map("exchange_rates")
+}
+
+// =============================================================================
+// MODULE ABONNEMENTS & FORFAITS
+// =============================================================================
+
+// Plans d'abonnements (Configurés par le Superadmin)
+model SubscriptionPlan {
+  id                    String         @id @default(uuid())
+  name                  String         // ex: "Starter", "Pro / Sérénité", "Expert / Agence"
+  code                  String         @unique // ex: "starter", "pro", "expert"
+  description           String?
+  priceMonthlyXof       Decimal        @db.Decimal(15, 2)
+  yearlyDiscountPercent Int            @default(20) // Pourcentage de remise annuelle (ex: 20%)
+  maxProperties         Int            // Quota: Nombre max de biens (ex: 2, 15, 9999)
+  maxTenants            Int            // Quota: Nombre max de locataires (ex: 2, 15, 9999)
+  features              Json           // Tableau JSON des fonctionnalités clés incluses
+  isRecommended         Boolean        @default(false) // Badge "Formule Recommandée"
+  isActive              Boolean        @default(true)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  subscriptions         Subscription[]
+
+  @@map("subscription_plans")
+}
+
+// Abonnements des Organisations (Multi-tenant)
+model Subscription {
+  id                      String               @id @default(uuid())
+  organizationId          String
+  organization            Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  planId                  String
+  plan                    SubscriptionPlan     @relation(fields: [planId], references: [id])
+  startDate               DateTime
+  endDate                 DateTime
+  status                  String               @default("active") // "active" | "suspended" | "deactivated" | "deleted"
+  gracePeriodEndDate      DateTime?            // Date limite des 90 jours de grâce avant suppression définitive
+  lastReminderSentAt      DateTime?            // Dernier rappel d'échéance envoyé
+  lastGraceReminderSentAt DateTime?            // Dernier rappel de grâce envoyé (tous les 5 jours)
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  payments                SubscriptionPayment[]
+
+  @@map("subscriptions")
+}
+
+// Paiements d'Abonnements par les Propriétaires
+model SubscriptionPayment {
+  id                String        @id @default(uuid())
+  paymentReference  String        @unique // ex: SUB-202607-001234
+  organizationId    String
+  organization      Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subscriptionId    String
+  subscription      Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  targetPlanId      String?       // ID du plan réclamé lors du paiement (attendant validation)
+  billingCycle      String?       @default("monthly") // monthly | yearly
+  amountXof         Decimal       @db.Decimal(15, 2)
+  paymentMethod     String        // orange_money | mtn_money | moov_money | wave | bank_transfer | cash | card
+  transactionNumber String?
+  paymentDate       DateTime
+  proofUrl          String?       // Justificatif de transfert / reçu bancaire
+  status            String        @default("pending") // pending | validated | rejected
+  rejectionReason   String?
+  pdfUrl            String?       // Lien vers la facture d'abonnement PDF générée
+  validatedBy       String?       // ID du super_admin
+  validatedAt       DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@map("subscription_payments")
+}
+
+// Threads de Discussion Locataire <-> Propriétaire / Gestionnaire
+model ChatThread {
+  id              String        @id @default(uuid())
+  organizationId  String
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  propertyId      String?
+  property        Property?     @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  contractId      String?
+  contract        Contract?     @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  tenantProfileId String
+  tenantProfile   TenantProfile @relation(fields: [tenantProfileId], references: [id], onDelete: Cascade)
+  lastMessageAt   DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  messages        ChatMessage[]
+
+  @@map("chat_threads")
+}
+
+// Messages du Tchat Chiffrés (Locataire <-> Bailleur)
+model ChatMessage {
+  id             String      @id @default(uuid())
+  threadId       String
+  thread         ChatThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderId       String      // ID de l'utilisateur expéditeur (User)
+  senderRole     String      // 'tenant' | 'owner' | 'admin' | 'manager'
+  content        String      @db.Text // Message (Chiffré AES-256 en BDD)
+  attachments    Json?       @default("[]") // Fichiers/Photos joints
+  isRead         Boolean     @default(false)
+  readAt         DateTime?
+  createdAt      DateTime    @default(now())
+
+  @@map("chat_messages")
+}
+
+// Master Data: Countries & Cities (Données Géographiques)
+model Country {
+  id        String   @id @default(uuid())
+  code      String   @unique // 'CI', 'SN', 'ML', 'BF', 'GN', 'BJ', 'TG', 'CM', 'FR'
+  name      String   @unique // 'Côte d\'Ivoire', 'Sénégal', 'Mali', etc.
+  phoneCode String?  // '+225', '+221', etc.
+  currency  String?  @default("XOF")
+  flag      String?  // '🇨🇮', '🇸🇳', etc.
+  isActive  Boolean  @default(true)
+  order     Int      @default(0)
+  cities    City[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("countries")
+}
+
+model City {
+  id        String   @id @default(uuid())
+  name      String
+  countryId String
+  country   Country  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  region    String?
+  isActive  Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([countryId, name])
+  @@map("cities")
+}
+

@@ -1,0 +1,44 @@
+import { Router } from 'express';
+import authRoutes from '@/modules/auth/auth.routes';
+import userRoutes from '@/modules/users/users.routes';
+import organizationRoutes from '@/modules/organizations/organizations.routes';
+import propertyRoutes from '@/modules/properties/properties.routes';
+import tenantProfileRoutes from '@/modules/tenant-profiles/tenant-profiles.routes';
+import contractRoutes from '@/modules/contracts/contracts.routes';
+import paymentRoutes from '@/modules/payments/payments.routes';
+import invoiceRoutes from '@/modules/invoices/invoices.routes';
+import receiptRoutes from '@/modules/receipts/receipts.routes';
+import notificationRoutes from '@/modules/notifications/notifications.routes';
+import incidentRoutes from '@/modules/incidents/incidents.routes';
+import documentRoutes from '@/modules/documents/documents.routes';
+import dashboardRoutes from '@/modules/dashboard/dashboard.routes';
+import accountingRoutes from '@/modules/accounting/accounting.routes';
+import subscriptionRoutes from '@/modules/subscriptions/subscriptions.routes';
+import tenantPortalRoutes from '@/modules/tenant-portal/tenant-portal.routes';
+import adminRoutes from '@/modules/admin/admin.routes';
+import chatRoutes from '@/modules/chat/chat.routes';
+import locationsRoutes from '@/modules/locations/locations.routes';
+
+const router = Router();
+
+router.use('/auth', authRoutes);
+router.use('/users', userRoutes);
+router.use('/organizations', organizationRoutes);
+router.use('/properties', propertyRoutes);
+router.use('/tenant-profiles', tenantProfileRoutes);
+router.use('/contracts', contractRoutes);
+router.use('/payments', paymentRoutes);
+router.use('/invoices', invoiceRoutes);
+router.use('/receipts', receiptRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/incidents', incidentRoutes);
+router.use('/documents', documentRoutes);
+router.use('/dashboard', dashboardRoutes);
+router.use('/accounting', accountingRoutes);
+router.use('/subscriptions', subscriptionRoutes);
+router.use('/tenant-portal', tenantPortalRoutes);
+router.use('/admin', adminRoutes);
+router.use('/chat', chatRoutes);
+router.use('/locations', locationsRoutes);
+
+export default router;
