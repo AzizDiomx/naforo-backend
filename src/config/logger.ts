@@ -4,6 +4,13 @@ import * as path from 'path';
 import { env } from '@/config/env';
 
 // ---------------------------------------------------------------------------
+// Environment detection
+// ---------------------------------------------------------------------------
+// CHANGED: sur Vercel (et AWS Lambda), le FS est en lecture seule
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const enableFileLogs = env.NODE_ENV !== 'test' && !isServerless;
+
+// ---------------------------------------------------------------------------
 // Custom log formats
 // ---------------------------------------------------------------------------
 const { combine, timestamp, colorize, printf, json, errors } = winston.format;
@@ -20,6 +27,17 @@ const fileFormat = combine(
   json()
 );
 
+// CHANGED: en serverless, on sort du JSON sur stdout (lisible et filtrable
+// dans l'onglet Logs de Vercel), sans couleurs ANSI
+const consoleTransportFormat = isServerless
+  ? fileFormat
+  : combine(
+      errors({ stack: true }),
+      timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+      colorize({ all: true }),
+      consoleFormat
+    );
+
 // ---------------------------------------------------------------------------
 // Transports
 // ---------------------------------------------------------------------------
@@ -29,21 +47,16 @@ const transports: winston.transport[] = [];
 transports.push(
   new winston.transports.Console({
     level: env.LOG_LEVEL,
-    format: combine(
-      errors({ stack: true }),
-      timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-      colorize({ all: true }),
-      consoleFormat
-    ),
+    format: consoleTransportFormat,
     silent: env.NODE_ENV === 'test',
   })
 );
 
-// File transports (production & development)
-if (env.NODE_ENV !== 'test') {
+// File transports (local / VPS / Docker uniquement)
+// CHANGED: condition enrichie avec !isServerless
+if (enableFileLogs) {
   const logDir = path.resolve(env.LOG_DIR);
 
-  // Combined log (all levels)
   transports.push(
     new DailyRotateFile({
       level: 'info',
@@ -53,11 +66,7 @@ if (env.NODE_ENV !== 'test') {
       maxSize: '20m',
       maxFiles: '14d',
       format: fileFormat,
-    })
-  );
-
-  // Error log (errors only)
-  transports.push(
+    }),
     new DailyRotateFile({
       level: 'error',
       filename: path.join(logDir, 'error-%DATE%.log'),
@@ -66,11 +75,7 @@ if (env.NODE_ENV !== 'test') {
       maxSize: '20m',
       maxFiles: '30d',
       format: fileFormat,
-    })
-  );
-
-  // HTTP access log
-  transports.push(
+    }),
     new DailyRotateFile({
       level: 'http',
       filename: path.join(logDir, 'access-%DATE%.log'),
@@ -104,4 +109,3 @@ export const morganStream = {
     logger.http(message.trim());
   },
 };
-
