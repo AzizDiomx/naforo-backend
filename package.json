@@ -12,7 +12,7 @@
     "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
     "test": "jest",
     "build": "prisma generate && tsc && tsc-alias",
-    "postinstall": "prisma generate && prisma migrate deploy && prisma db seed"
+    "postinstall": "prisma generate && prisma migrate deploy"
   },
   "dependencies": {
     "@prisma/client": "^5.10.2",
