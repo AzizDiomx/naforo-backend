@@ -1,4 +1,4 @@
-import { sendMail } from '@/config/mailer';
+import { sendMail, EmailServiceType } from '@/config/mailer';
 import { sendSMS } from '@/config/sms';
 import { prisma } from '@/config/database';
 import { logger } from '@/config/logger';
@@ -14,6 +14,7 @@ export interface DispatchNotificationOptions {
   emailHtml: string;
   smsText: string;
   data?: any;
+  service?: EmailServiceType;
 }
 
 /**
@@ -26,7 +27,21 @@ export async function dispatchNotification(opts: DispatchNotificationOptions): P
   // 1. Try sending Email if email is provided
   if (opts.email) {
     try {
-      sentEmail = await sendMail(opts.email, opts.emailSubject, opts.emailHtml);
+      let serviceType: EmailServiceType = opts.service || 'info';
+      if (!opts.service) {
+        const t = (opts.type || '').toUpperCase();
+        if (t.includes('PASSWORD') || t.includes('SUBSCRIPTION') || t.includes('SECURITY') || t.includes('ADMIN')) {
+          serviceType = 'admin';
+        } else if (t.includes('WELCOME') || t.includes('REGISTER') || t.includes('ONBOARDING')) {
+          serviceType = 'contact';
+        } else if (t.includes('INCIDENT') || t.includes('SUPPORT') || t.includes('REJECTED')) {
+          serviceType = 'support';
+        } else {
+          serviceType = 'info';
+        }
+      }
+
+      sentEmail = await sendMail(opts.email, opts.emailSubject, opts.emailHtml, undefined, undefined, serviceType);
     } catch (err) {
       logger.warn(`Dispatch email error for ${opts.email}:`, err);
     }

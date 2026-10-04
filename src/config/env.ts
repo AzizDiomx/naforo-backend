@@ -1,4 +1,4 @@
-﻿import { z } from 'zod';
+import { z } from 'zod';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -69,17 +69,17 @@ const envSchema = z.object({
     .transform((v) => parseInt(v, 10))
     .default('12'),
 
-  // Email (SMTP)
-  SMTP_HOST: z.string().default('smtp.gmail.com'),
+  // Email (SMTP - Hostinger naforo.company)
+  SMTP_HOST: z.string().default('smtp.hostinger.com'),
   SMTP_PORT: z
     .string()
     .transform((v) => parseInt(v, 10))
-    .default('587'),
-  SMTP_SECURE: booleanString.default('false'),
-  SMTP_USER: z.string().optional().transform((v) => v || process.env.MAIL_USER),
+    .default('465'),
+  SMTP_SECURE: booleanString.default('true'),
+  SMTP_USER: z.string().optional().transform((v) => v || process.env.MAIL_USER || 'aziz.diomande@naforo.company'),
   SMTP_PASS: z.string().optional().transform((v) => v || process.env.MAIL_PASS),
   SMTP_FROM_NAME: z.string().default('Naforo'),
-  SMTP_FROM_EMAIL: z.string().email().default('noreply@naforo.ci'),
+  SMTP_FROM_EMAIL: z.string().email().default('info@naforo.company'),
 
   // Twilio
   TWILIO_ACCOUNT_SID: z.string().optional(),

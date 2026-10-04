@@ -30,11 +30,11 @@ export async function processNotificationJob(job: Job): Promise<void> {
  * Job processor for sending emails via Nodemailer
  */
 export async function processEmailJob(job: Job): Promise<void> {
-  const { to, subject, html, text, attachments } = job.data;
+  const { to, subject, html, text, attachments, service } = job.data;
   logger.debug(`Processing email job: ${job.id} to ${to}`);
 
   try {
-    await sendMail(to, subject, html, text, attachments);
+    await sendMail(to, subject, html, text, attachments, service);
   } catch (error) {
     logger.error(`Failed to send email in job ${job.id} to ${to}`, error);
     throw error;

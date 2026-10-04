@@ -1,10 +1,60 @@
-node_modules
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+
+# Environment files
 .env
-uploads/*
-logs/*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Uploads
+uploads/
+
+# Logs
+logs/
 *.log
-.vscode
-.idea
-/dist
+*.log.*
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# TypeScript cache
 *.tsbuildinfo
-.turbo
+
+# Jest
+jest.config.js
+
+# Temporary files
+tmp/
+temp/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db

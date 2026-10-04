@@ -570,7 +570,7 @@ export class SubscriptionsService {
       ];
 
       try {
-        await sendMail(recipientEmails, emailSubject, emailHtml, undefined, attachments);
+        await sendMail(recipientEmails, emailSubject, emailHtml, undefined, attachments, 'admin');
         logger.info(`[Subscription] Facture d'abonnement ${payment.paymentReference} envoyée par email à : ${recipientEmails.join(', ')}`);
       } catch (mailErr: any) {
         logger.warn(`[Subscription] Envoi direct de l'email échoué (${mailErr.message}), bascule vers emailQueue...`);
@@ -580,6 +580,7 @@ export class SubscriptionsService {
             subject: emailSubject,
             html: emailHtml,
             attachments,
+            service: 'admin',
           });
         } catch (queueErr: any) {
           logger.error(`[Subscription] Impossible d'ajouter l'email à la file d'attente: ${queueErr.message}`);

@@ -236,20 +236,23 @@ export class AuthService {
 
     logger.info(`🔑 [OTP MOT DE PASSE OUBLIÉ] Destinataire: ${user.email} | Code OTP: ${otp}`);
 
-    // Send reset password OTP email
+    // Send reset password OTP email via admin@naforo.company
     sendMail(
       user.email,
       'Réinitialisation de votre mot de passe - Naforo',
       `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
-        <h2 style="color: #4f46e5;">Réinitialisation de mot de passe</h2>
+        <h2 style="color: #013E37;">Réinitialisation de mot de passe</h2>
         <p>Vous avez demandé la réinitialisation de votre mot de passe. Veuillez utiliser le code OTP ci-dessous pour procéder au changement :</p>
-        <div style="background-color: #f3f4f6; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 4px; border-radius: 6px; margin: 20px 0; color: #111827;">
+        <div style="background-color: #f8fafc; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 4px; border-radius: 6px; margin: 20px 0; color: #013E37; border: 1px solid #e2e8f0;">
           ${otp}
         </div>
         <p>Ce code expire dans 15 minutes.</p>
         <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
         <p style="font-size: 12px; color: #6b7280;">Si vous n'avez pas demandé ce changement, vous pouvez ignorer cet email en toute sécurité.</p>
-      </div>`
+      </div>`,
+      undefined,
+      undefined,
+      'admin'
     ).catch((err) => logger.error('Failed to send forgot password email', err));
   }
 

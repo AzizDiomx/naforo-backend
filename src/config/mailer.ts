@@ -3,16 +3,103 @@ import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 
 // ---------------------------------------------------------------------------
-// Transporter
+// Hostinger Service Aliases Mapping
 // ---------------------------------------------------------------------------
-const smtpUser = env.SMTP_USER || process.env.MAIL_USER;
+export type EmailServiceType = 'admin' | 'contact' | 'support' | 'info';
+
+export interface EmailSenderConfig {
+  email: string;
+  name: string;
+  description: string;
+}
+
+export const EMAIL_SERVICES: Record<EmailServiceType, EmailSenderConfig> = {
+  admin: {
+    email: 'admin@naforo.company',
+    name: 'Naforo Administration',
+    description: 'Sécurité, validation des abonnements, OTP et gestion de plateforme',
+  },
+  contact: {
+    email: 'contact@naforo.company',
+    name: 'Naforo Commercial',
+    description: 'Bienvenue, création de compte agence, onboarding et relations commerciales',
+  },
+  support: {
+    email: 'support@naforo.company',
+    name: 'Naforo Support',
+    description: 'Assistance technique, gestion des pannes/incidents et aide locataires/agences',
+  },
+  info: {
+    email: 'info@naforo.company',
+    name: 'Naforo Notifications',
+    description: 'Avis d\'échéance, quittances de loyer, factures et suivi des règlements',
+  },
+};
+
+export function getSenderForService(service?: EmailServiceType, customFrom?: string): { from: string; replyTo: string; service: EmailServiceType } {
+  if (customFrom) {
+    return { from: customFrom, replyTo: customFrom, service: service || 'info' };
+  }
+  const targetService: EmailServiceType = service || 'info';
+  const cfg = EMAIL_SERVICES[targetService] || EMAIL_SERVICES.info;
+  return {
+    from: `"${cfg.name}" <${cfg.email}>`,
+    replyTo: cfg.email,
+    service: targetService,
+  };
+}
+
+export function detectServiceFromContent(subject: string, html: string): EmailServiceType {
+  const text = `${subject} ${html}`.toLowerCase();
+  if (
+    text.includes('mot de passe') ||
+    text.includes('réinitialisation') ||
+    text.includes('otp') ||
+    text.includes('abonnement') ||
+    text.includes('souscription') ||
+    text.includes('sécurité') ||
+    text.includes('audit')
+  ) {
+    return 'admin';
+  }
+  if (
+    text.includes('bienvenue') ||
+    text.includes('inscription') ||
+    text.includes('agence') ||
+    text.includes('onboarding') ||
+    text.includes('commercial')
+  ) {
+    return 'contact';
+  }
+  if (
+    text.includes('incident') ||
+    text.includes('panne') ||
+    text.includes('artisan') ||
+    text.includes('intervention') ||
+    text.includes('support') ||
+    text.includes('rejet') ||
+    text.includes('rejeté')
+  ) {
+    return 'support';
+  }
+  return 'info';
+}
+
+// ---------------------------------------------------------------------------
+// Transporter (Serveur Hostinger naforo.company)
+// ---------------------------------------------------------------------------
+const smtpUser = env.SMTP_USER || process.env.MAIL_USER || 'aziz.diomande@naforo.company';
 const smtpPass = env.SMTP_PASS || process.env.MAIL_PASS;
+const isSecure = env.SMTP_SECURE !== undefined ? env.SMTP_SECURE : (env.SMTP_PORT === 465);
 
 const transporter = nodemailer.createTransport({
-  host: env.SMTP_HOST || 'smtp.gmail.com',
-  port: env.SMTP_PORT || 587,
-  secure: env.SMTP_SECURE || false,
+  host: env.SMTP_HOST || 'smtp.hostinger.com',
+  port: env.SMTP_PORT || 465,
+  secure: isSecure,
   auth: smtpUser && smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
+  pool: true,
+  maxConnections: 5,
+  maxMessages: 100,
 });
 
 // ---------------------------------------------------------------------------
@@ -21,9 +108,14 @@ const transporter = nodemailer.createTransport({
 if (env.NODE_ENV !== 'test') {
   transporter.verify((error) => {
     if (error) {
-      logger.warn('Mailer transporter verification failed (Vérifiez les identifiants SMTP)', { error: error.message });
+      logger.warn('Mailer Hostinger transporter verification failed (Vérifiez les identifiants SMTP Hostinger)', { error: error.message });
     } else {
-      logger.info('Mailer transporter prêt pour envoi SMTP Gmail/Mailtrap', { host: env.SMTP_HOST, port: env.SMTP_PORT, user: smtpUser });
+      logger.info('Mailer Hostinger opérationnel pour aziz.diomande@naforo.company et ses alias (admin, contact, support, info)', {
+        host: env.SMTP_HOST || 'smtp.hostinger.com',
+        port: env.SMTP_PORT || 465,
+        user: smtpUser,
+        aliases: Object.values(EMAIL_SERVICES).map(s => s.email),
+      });
     }
   });
 }
@@ -35,32 +127,77 @@ export interface MailAttachment {
   contentType?: string;
 }
 
+export interface SendMailOptions {
+  to: string | string[];
+  subject: string;
+  html: string;
+  text?: string;
+  attachments?: MailAttachment[];
+  service?: EmailServiceType;
+  from?: string;
+  replyTo?: string;
+}
+
 // ---------------------------------------------------------------------------
-// Base email sender
+// Base email sender avec routage automatique par service
 // ---------------------------------------------------------------------------
 export async function sendMail(
-  to: string | string[],
-  subject: string,
-  html: string,
-  text?: string,
-  attachments?: MailAttachment[]
+  toOrOptions: string | string[] | SendMailOptions,
+  subjectParam?: string,
+  htmlParam?: string,
+  textParam?: string,
+  attachmentsParam?: MailAttachment[],
+  serviceParam?: EmailServiceType
 ): Promise<boolean> {
+  let to: string | string[];
+  let subject: string;
+  let html: string;
+  let text: string | undefined;
+  let attachments: MailAttachment[] | undefined;
+  let service: EmailServiceType | undefined;
+  let customFrom: string | undefined;
+  let customReplyTo: string | undefined;
+
+  if (typeof toOrOptions === 'object' && !Array.isArray(toOrOptions) && 'to' in toOrOptions) {
+    to = toOrOptions.to;
+    subject = toOrOptions.subject;
+    html = toOrOptions.html;
+    text = toOrOptions.text;
+    attachments = toOrOptions.attachments;
+    service = toOrOptions.service;
+    customFrom = toOrOptions.from;
+    customReplyTo = toOrOptions.replyTo;
+  } else {
+    to = toOrOptions as string | string[];
+    subject = subjectParam || '';
+    html = htmlParam || '';
+    text = textParam;
+    attachments = attachmentsParam;
+    service = serviceParam;
+  }
+
+  // Résoudre le service (alias Hostinger) : spécifié ou détecté automatiquement
+  const resolvedService: EmailServiceType = service || detectServiceFromContent(subject, html);
+  const sender = getSenderForService(resolvedService, customFrom);
+
   try {
     await transporter.sendMail({
-      from: `"${env.SMTP_FROM_NAME}" <${env.SMTP_FROM_EMAIL}>`,
+      from: sender.from,
+      replyTo: customReplyTo || sender.replyTo,
       to: Array.isArray(to) ? to.join(', ') : to,
       subject,
       html,
       text: text ?? html.replace(/<[^>]*>/g, ''),
       attachments,
     });
-    logger.info('Email sent successfully', { to, subject, hasAttachments: Boolean(attachments && attachments.length) });
+    logger.info(`[Email Envoyé - ${resolvedService.toUpperCase()}] Destinataire: ${Array.isArray(to) ? to.join(', ') : to} | Expéditeur: ${sender.from} | Sujet: ${subject}`);
     return true;
   } catch (error: any) {
-    logger.warn(`[ECHEC EMAIL SMTP] Impossible d'envoyer l'email à ${to}: ${error.message}`);
+    logger.warn(`[ECHEC EMAIL SMTP Hostinger - ${resolvedService}] Impossible d'envoyer l'email à ${to} via ${sender.from}: ${error.message}`);
     logger.info(`
 ================================================================================
-📧 [FALLBACK EMAIL LOG - Naforo]
+📧 [FALLBACK EMAIL LOG - Naforo Hostinger (${resolvedService.toUpperCase()})]
+Expéditeur: ${sender.from}
 Destinataire: ${Array.isArray(to) ? to.join(', ') : to}
 Sujet: ${subject}
 Pièces jointes: ${attachments?.map(a => a.filename).join(', ') || 'Aucune'}
@@ -131,6 +268,7 @@ function baseLayout(title: string, content: string): string {
       <p>
         &copy; ${new Date().getFullYear()} NAFORO Technologies &mdash; Tous droits réservés.<br/>
         Abidjan, Côte d'Ivoire &bull; <a href="${env.FRONTEND_URL}">${env.FRONTEND_URL}</a><br/>
+        Support : <a href="mailto:support@naforo.company">support@naforo.company</a> &bull; Commercial : <a href="mailto:contact@naforo.company">contact@naforo.company</a><br/>
         Ceci est une notification automatique sécurisée relative à votre compte organisation.
       </p>
     </div>
@@ -469,7 +607,7 @@ export function subscriptionPaymentApproved(params: SubscriptionApprovedParams):
     </div>
 
     <p class="text" style="font-size: 12px; color: #64748b; text-align: center; margin-top: 16px;">
-      Besoin d'aide ou d'une question concernant votre compte ? Contactez notre support à <a href="mailto:support@naforo.ci" style="color: #013E37; font-weight: 600;">support@naforo.ci</a>.
+      Besoin d'aide ou d'une question concernant votre compte ? Contactez notre support à <a href="mailto:support@naforo.company" style="color: #013E37; font-weight: 600;">support@naforo.company</a>.
     </p>
   `);
 }

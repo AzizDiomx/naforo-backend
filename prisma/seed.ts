@@ -4,14 +4,14 @@ import * as bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@bailflow.ci';
-  const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD || 'BailflowSecure2026!';
+  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@naforo.company';
+  const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD || 'NaforoSecure2026!';
 
   console.log('Seeding database...');
 
   // 1. Create default organization
   const organization = await prisma.organization.upsert({
-    where: { email: 'demo@bailflow.ci' },
+    where: { email: 'demo@naforo.com' },
     update: {},
     create: {
       name: 'BAILFLOW Demo',
