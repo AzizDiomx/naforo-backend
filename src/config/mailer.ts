@@ -36,16 +36,17 @@ export const EMAIL_SERVICES: Record<EmailServiceType, EmailSenderConfig> = {
   },
 };
 
-export function getSenderForService(service?: EmailServiceType, customFrom?: string): { from: string; replyTo: string; service: EmailServiceType } {
-  if (customFrom) {
-    return { from: customFrom, replyTo: customFrom, service: service || 'info' };
-  }
+export function getSenderForService(service?: EmailServiceType, customFrom?: string): { from: string; replyTo: string; service: EmailServiceType; name: string } {
   const targetService: EmailServiceType = service || 'info';
   const cfg = EMAIL_SERVICES[targetService] || EMAIL_SERVICES.info;
+  if (customFrom) {
+    return { from: customFrom, replyTo: customFrom, service: targetService, name: cfg.name };
+  }
   return {
     from: `"${cfg.name}" <${cfg.email}>`,
     replyTo: cfg.email,
     service: targetService,
+    name: cfg.name,
   };
 }
 
