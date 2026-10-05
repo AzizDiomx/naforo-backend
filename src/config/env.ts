@@ -30,7 +30,7 @@ const envSchema = z.object({
     .transform((v) => parseInt(v, 10))
     .default('3000'),
   API_PREFIX: z.string().default('/api/v1'),
-  CORS_ORIGINS: z.string().default('http://localhost:3001,http://localhost:3002'),
+  CORS_ORIGINS: z.string().default('https://backoffice.naforo.company,https://tenant.naforo.company,https://naforo.company,http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004'),
 
   // Database
   DATABASE_URL: z.string().optional(),

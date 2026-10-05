@@ -30,20 +30,72 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
-// 3. CORS configuration
-const corsOrigins = env.CORS_ORIGINS.split(',');
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || corsOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
-        callback(null, true);
-      } else {
-        callback(new Error('Non autorisé par CORS'));
-      }
-    },
-    credentials: true,
-  })
-);
+// 3. CORS configuration (Robuste & dynamique pour tous les sous-domaines naforo.company et Vercel)
+const defaultAllowedOrigins = [
+  'https://backoffice.naforo.company',
+  'https://tenant.naforo.company',
+  'https://naforo.company',
+  'https://www.naforo.company',
+  'https://eagence.naforo.company',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'http://localhost:3003',
+  'http://localhost:3004',
+];
+
+const configuredOrigins = env.CORS_ORIGINS
+  ? env.CORS_ORIGINS.split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean)
+  : [];
+
+const allowedOriginsSet = new Set([...defaultAllowedOrigins, ...configuredOrigins]);
+
+function isOriginAllowed(origin: string): boolean {
+  const normalized = origin.replace(/\/$/, '');
+  if (allowedOriginsSet.has(normalized)) return true;
+
+  try {
+    const url = new URL(normalized);
+    // Autoriser tous les sous-domaines officiels *.naforo.company
+    if (url.hostname === 'naforo.company' || url.hostname.endsWith('.naforo.company')) {
+      return true;
+    }
+    // Autoriser les déploiements preview Vercel (*.vercel.app)
+    if (url.hostname.endsWith('.vercel.app')) {
+      return true;
+    }
+    // Environnements locaux
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+      return true;
+    }
+  } catch (_) {}
+
+  return false;
+}
+
+const corsMiddleware = cors({
+  origin: (origin, callback) => {
+    // Requêtes serveur-à-serveur, mobile, healthchecks (pas d'en-tête Origin)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (isOriginAllowed(origin) || process.env.NODE_ENV === 'development') {
+      return callback(null, true);
+    }
+
+    // Refus standard sans lever d'erreur 500
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-auth-token'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range', 'Set-Cookie'],
+  maxAge: 86400,
+});
+
+app.use(corsMiddleware);
+app.options('*', corsMiddleware);
 
 // 4. Rate Limiters
 const globalLimiter = rateLimit({
