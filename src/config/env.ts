@@ -81,6 +81,16 @@ const envSchema = z.object({
   SMTP_FROM_NAME: z.string().default('Naforo'),
   SMTP_FROM_EMAIL: z.string().email().default('info@naforo.company'),
 
+  // Email Fallback (SMTP Secours - Google Gmail)
+  GMAIL_SMTP_HOST: z.string().default('smtp.gmail.com'),
+  GMAIL_SMTP_PORT: z
+    .string()
+    .transform((v) => parseInt(v, 10))
+    .default('587'),
+  GMAIL_SMTP_SECURE: booleanString.default('false'),
+  GMAIL_USER: z.string().optional().transform((v) => v || process.env.GOOGLE_MAIL_USER || 'ismaeldiom70@gmail.com'),
+  GMAIL_PASS: z.string().optional().transform((v) => v || process.env.GOOGLE_MAIL_PASS || 'umzf ceuy wgad xutw'),
+
   // Twilio
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),

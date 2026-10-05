@@ -86,38 +86,77 @@ export function detectServiceFromContent(subject: string, html: string): EmailSe
 }
 
 // ---------------------------------------------------------------------------
-// Transporter (Serveur Hostinger naforo.company)
+// Transporter Principal (Hostinger naforo.company)
 // ---------------------------------------------------------------------------
-const smtpUser = env.SMTP_USER || process.env.MAIL_USER || 'aziz.diomande@naforo.company';
-const smtpPass = env.SMTP_PASS || process.env.MAIL_PASS;
-const isSecure = env.SMTP_SECURE !== undefined ? env.SMTP_SECURE : (env.SMTP_PORT === 465);
+const hostingerUser = env.SMTP_USER || process.env.MAIL_USER || 'aziz.diomande@naforo.company';
+const hostingerPass = env.SMTP_PASS || process.env.MAIL_PASS;
+const isHostingerSecure = env.SMTP_SECURE !== undefined ? env.SMTP_SECURE : (env.SMTP_PORT === 465);
 
-const transporter = nodemailer.createTransport({
+const hostingerTransporter = nodemailer.createTransport({
   host: env.SMTP_HOST || 'smtp.hostinger.com',
   port: env.SMTP_PORT || 465,
-  secure: isSecure,
-  auth: smtpUser && smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
+  secure: isHostingerSecure,
+  auth: hostingerUser && hostingerPass ? { user: hostingerUser, pass: hostingerPass } : undefined,
   pool: true,
   maxConnections: 5,
   maxMessages: 100,
+  connectionTimeout: 8000,
+  greetingTimeout: 5000,
+  socketTimeout: 10000,
 });
+
+// ---------------------------------------------------------------------------
+// Transporter de Secours (Google Gmail SMTP Fallback)
+// ---------------------------------------------------------------------------
+const gmailUser = env.GMAIL_USER || process.env.GOOGLE_MAIL_USER || 'ismaeldiom70@gmail.com';
+const gmailPass = env.GMAIL_PASS || process.env.GOOGLE_MAIL_PASS || 'umzf ceuy wgad xutw';
+const isGmailSecure = env.GMAIL_SMTP_SECURE || false;
+
+const googleTransporter = nodemailer.createTransport({
+  host: env.GMAIL_SMTP_HOST || 'smtp.gmail.com',
+  port: env.GMAIL_SMTP_PORT || 587,
+  secure: isGmailSecure,
+  auth: gmailUser && gmailPass ? { user: gmailUser, pass: gmailPass } : undefined,
+  connectionTimeout: 8000,
+  greetingTimeout: 5000,
+  socketTimeout: 10000,
+});
+
+// Alias pour compatibilité
+export const transporter = hostingerTransporter;
 
 // ---------------------------------------------------------------------------
 // Verify connection on startup
 // ---------------------------------------------------------------------------
 if (env.NODE_ENV !== 'test') {
-  transporter.verify((error) => {
+  // 1. Vérification Hostinger (Principal)
+  hostingerTransporter.verify((error) => {
     if (error) {
-      logger.warn('Mailer Hostinger transporter verification failed (Vérifiez les identifiants SMTP Hostinger)', { error: error.message });
+      logger.warn('Mailer Hostinger (Principal) non joignable ou identifiants en attente', { error: error.message });
     } else {
-      logger.info('Mailer Hostinger opérationnel pour aziz.diomande@naforo.company et ses alias (admin, contact, support, info)', {
+      logger.info('Mailer Hostinger (Principal) opérationnel pour aziz.diomande@naforo.company et ses alias', {
         host: env.SMTP_HOST || 'smtp.hostinger.com',
         port: env.SMTP_PORT || 465,
-        user: smtpUser,
+        user: hostingerUser,
         aliases: Object.values(EMAIL_SERVICES).map(s => s.email),
       });
     }
   });
+
+  // 2. Vérification Google (Secours)
+  if (gmailUser && gmailPass) {
+    googleTransporter.verify((error) => {
+      if (error) {
+        logger.warn('Mailer Google Gmail (Secours) non joignable', { error: error.message });
+      } else {
+        logger.info('Mailer Google Gmail (Secours/Fallback) opérationnel', {
+          host: env.GMAIL_SMTP_HOST || 'smtp.gmail.com',
+          port: env.GMAIL_SMTP_PORT || 587,
+          user: gmailUser,
+        });
+      }
+    });
+  }
 }
 
 export interface MailAttachment {
@@ -139,7 +178,7 @@ export interface SendMailOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Base email sender avec routage automatique par service
+// Base email sender avec bascule automatique (Hostinger -> Google Gmail)
 // ---------------------------------------------------------------------------
 export async function sendMail(
   toOrOptions: string | string[] | SendMailOptions,
@@ -179,35 +218,85 @@ export async function sendMail(
   // Résoudre le service (alias Hostinger) : spécifié ou détecté automatiquement
   const resolvedService: EmailServiceType = service || detectServiceFromContent(subject, html);
   const sender = getSenderForService(resolvedService, customFrom);
+  const recipientsStr = Array.isArray(to) ? to.join(', ') : to;
+  const textContent = text ?? html.replace(/<[^>]*>/g, '');
 
-  try {
-    await transporter.sendMail({
-      from: sender.from,
-      replyTo: customReplyTo || sender.replyTo,
-      to: Array.isArray(to) ? to.join(', ') : to,
-      subject,
-      html,
-      text: text ?? html.replace(/<[^>]*>/g, ''),
-      attachments,
-    });
-    logger.info(`[Email Envoyé - ${resolvedService.toUpperCase()}] Destinataire: ${Array.isArray(to) ? to.join(', ') : to} | Expéditeur: ${sender.from} | Sujet: ${subject}`);
-    return true;
-  } catch (error: any) {
-    logger.warn(`[ECHEC EMAIL SMTP Hostinger - ${resolvedService}] Impossible d'envoyer l'email à ${to} via ${sender.from}: ${error.message}`);
-    logger.info(`
+  let hostingerError: any = null;
+
+  // =========================================================================
+  // TENTATIVE 1 : Envoi via Hostinger (Provider Principal)
+  // =========================================================================
+  if (hostingerPass) {
+    try {
+      await hostingerTransporter.sendMail({
+        from: sender.from,
+        replyTo: customReplyTo || sender.replyTo,
+        to: recipientsStr,
+        subject,
+        html,
+        text: textContent,
+        attachments,
+      });
+      logger.info(`[Email Envoyé - Hostinger - ${resolvedService.toUpperCase()}] Destinataire: ${recipientsStr} | Expéditeur: ${sender.from} | Sujet: ${subject}`);
+      return true;
+    } catch (error: any) {
+      hostingerError = error;
+      logger.warn(`[FAILOVER ACTIVÉ] Échec SMTP Hostinger (${error.message}). Bascule automatique vers le provider de secours Google Gmail...`);
+    }
+  } else {
+    logger.info(`[SMTP Hostinger non configuré] Bascule directe vers le provider de secours Google Gmail...`);
+  }
+
+  // =========================================================================
+  // TENTATIVE 2 : Envoi via Google Gmail (Provider de Secours / Fallback)
+  // =========================================================================
+  if (gmailUser && gmailPass) {
+    try {
+      // Pour Google Gmail, l'adresse technique d'envoi est le compte authentifié,
+      // mais le nom affiché et le Reply-To pointent vers l'adresse officielle Naforo
+      const fallbackFrom = `"${sender.name}" <${gmailUser}>`;
+      const fallbackReplyTo = customReplyTo || sender.replyTo;
+
+      await googleTransporter.sendMail({
+        from: fallbackFrom,
+        replyTo: fallbackReplyTo,
+        to: recipientsStr,
+        subject,
+        html,
+        text: textContent,
+        attachments,
+      });
+
+      logger.info(
+        `[Email Envoyé - Fallback Google Gmail - ${resolvedService.toUpperCase()}] Destinataire: ${recipientsStr} | Expéditeur: ${fallbackFrom} (Réponse vers: ${fallbackReplyTo}) | Sujet: ${subject}`
+      );
+      return true;
+    } catch (gmailError: any) {
+      logger.error(
+        `[ÉCHEC TOTAL EMAIL] Échec Hostinger (${hostingerError?.message || 'non configuré'}) ET échec Google Gmail (${gmailError.message})`,
+        { error: gmailError }
+      );
+    }
+  }
+
+  // =========================================================================
+  // LOG DE SECOURS (Si les deux providers sont indisponibles)
+  // =========================================================================
+  logger.warn(`[ECHEC EMAIL SMTP TOTAL - ${resolvedService}] Impossible d'envoyer l'email à ${recipientsStr}`);
+  logger.info(`
 ================================================================================
-📧 [FALLBACK EMAIL LOG - Naforo Hostinger (${resolvedService.toUpperCase()})]
-Expéditeur: ${sender.from}
-Destinataire: ${Array.isArray(to) ? to.join(', ') : to}
+📧 [FALLBACK EMAIL LOG - Naforo (${resolvedService.toUpperCase()})]
+Expéditeur cible: ${sender.from}
+Destinataire: ${recipientsStr}
 Sujet: ${subject}
 Pièces jointes: ${attachments?.map(a => a.filename).join(', ') || 'Aucune'}
 --------------------------------------------------------------------------------
 Contenu Texte:
-${text ?? html.replace(/<[^>]*>/g, '')}
+${textContent}
 ================================================================================
-    `);
-    return false;
-  }
+  `);
+
+  return false;
 }
 
 // ---------------------------------------------------------------------------
