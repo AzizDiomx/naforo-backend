@@ -6,6 +6,7 @@ import { env } from '@/config/env';
 import { signData } from '@/shared/helpers/crypto';
 import { formatDate, formatCurrency, getMonthName } from '@/shared/helpers/date';
 import { pdfQueue, emailQueue } from '@/queues';
+import { sendMail } from '@/config/mailer';
 import { logger } from '@/config/logger';
 import path from 'path';
 import fs from 'fs';
@@ -239,8 +240,10 @@ export class ReceiptsService {
       data: { pdfUrl: relativePath },
     });
 
-    // Queue email trigger to send receipt to tenant
-    await emailQueue.add('send-receipt-email', { receiptId });
+    // Send receipt email directly (with Hostinger -> Google Gmail automatic failover)
+    await this.sendReceiptEmail(receiptId).catch((err) =>
+      logger.warn(`Impossible d'envoyer l'email de quittance (${receipt.receiptNumber})`, err)
+    );
 
     return relativePath;
   }
@@ -253,13 +256,21 @@ export class ReceiptsService {
 
     if (!receipt || !receipt.tenantProfile.email) return;
 
-    const attachmentPath = path.join(process.cwd(), 'uploads', 'receipts', `${receipt.receiptNumber}.pdf`);
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const receiptsDir = isServerless
+      ? path.join(os.tmpdir(), 'uploads', 'receipts')
+      : path.join(process.cwd(), 'uploads', 'receipts');
+    const attachmentPath = path.join(receiptsDir, `${receipt.receiptNumber}.pdf`);
 
-    await emailQueue.add('send-email', {
+    const attachments = fs.existsSync(attachmentPath)
+      ? [{ filename: `${receipt.receiptNumber}.pdf`, path: attachmentPath }]
+      : undefined;
+
+    await sendMail({
       to: receipt.tenantProfile.email,
       subject: `Quittance de Loyer N° ${receipt.receiptNumber} - Naforo`,
       html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
-        <h2 style="color: #10b981;">Quittance de Loyer - Naforo</h2>
+        <h2 style="color: #013E37;">Quittance de Loyer - Naforo</h2>
         <p>Bonjour ${receipt.tenantProfile.firstName},</p>
         <p>Votre paiement a été validé. Veuillez trouver ci-joint votre quittance de loyer officielle pour la période de <strong>${getMonthName(receipt.periodMonth, receipt.periodYear)}</strong>.</p>
         <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 6px; margin: 20px 0;">
@@ -273,12 +284,8 @@ export class ReceiptsService {
         <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
         <p style="font-size: 11px; color: #9ca3af; text-align: center;">Document certifié électroniquement et généré par Naforo pour ${receipt.organization.name}</p>
       </div>`,
-      attachments: [
-        {
-          filename: `${receipt.receiptNumber}.pdf`,
-          path: attachmentPath,
-        }
-      ]
+      attachments,
+      service: 'info',
     });
   }
 

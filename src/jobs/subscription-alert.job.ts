@@ -1,7 +1,7 @@
 import { Job } from 'bull';
 import { logger } from '@/config/logger';
 import { prisma } from '@/config/database';
-import { emailQueue, smsQueue } from '@/queues';
+import { sendMail } from '@/config/mailer';
 
 export async function processSubscriptionAlertJob(job: Job): Promise<void> {
   logger.info(`[Subscription Lifecycle Scanner] Démarrage du job ${job.id}`);
@@ -50,7 +50,7 @@ export async function processSubscriptionAlertJob(job: Job): Promise<void> {
 
         if (!alreadySentToday) {
           logger.info(`[Lifecycle] Envoi du rappel J-${daysRemaining} à ${owner.email} (${sub.organization.name})`);
-          await emailQueue.add('send-email', {
+          await sendMail({
             to: owner.email,
             subject: `⚠️ Rappel Échéance : Votre abonnement Naforo expire dans ${daysRemaining} jour(s)`,
             html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #f59e0b; border-radius: 8px;">
@@ -63,6 +63,7 @@ export async function processSubscriptionAlertJob(job: Job): Promise<void> {
               <p>Pour éviter toute interruption de vos activités, nous vous invitons à déclarer votre renouvellement dès maintenant depuis votre tableau de bord.</p>
               <p>L'équipe Naforo</p>
             </div>`,
+            service: 'admin',
           });
 
           await prisma.subscription.update({
@@ -82,7 +83,7 @@ export async function processSubscriptionAlertJob(job: Job): Promise<void> {
           data: { status: 'suspended' },
         });
 
-        await emailQueue.add('send-email', {
+        await sendMail({
           to: owner.email,
           subject: `🚨 Votre abonnement Naforo a expiré - Espace suspendu en mode LECTURE SEULE`,
           html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ef4444; border-radius: 8px;">
@@ -96,6 +97,7 @@ export async function processSubscriptionAlertJob(job: Job): Promise<void> {
             <p>Rendez-vous sur votre espace pour soumettre votre preuve de paiement.</p>
             <p>L'équipe Naforo</p>
           </div>`,
+          service: 'admin',
         });
       }
 
@@ -120,7 +122,7 @@ export async function processSubscriptionAlertJob(job: Job): Promise<void> {
           data: { isActive: false },
         });
 
-        await emailQueue.add('send-email', {
+        await sendMail({
           to: owner.email,
           subject: `⛔ Compte Désactivé : Période de grâce de 90 jours engagée (Naforo)`,
           html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #b91c1c; border-radius: 8px;">
@@ -134,6 +136,7 @@ export async function processSubscriptionAlertJob(job: Job): Promise<void> {
             <p>Pour débloquer vos accès et éviter la purge définitive de votre portefeuille immobilier, veuillez contacter notre service client ou procéder à votre régularisation.</p>
             <p>L'équipe Naforo</p>
           </div>`,
+          service: 'admin',
         });
       }
 
@@ -152,7 +155,7 @@ export async function processSubscriptionAlertJob(job: Job): Promise<void> {
 
         if (remainingGraceDays > 0 && daysSinceLastGrace >= 5) {
           logger.warn(`[Lifecycle] Envoi du rappel de grâce (reste ${remainingGraceDays}j) à ${owner.email}`);
-          await emailQueue.add('send-email', {
+          await sendMail({
             to: owner.email,
             subject: `🔴 ALERTE PÉRIODE DE GRÂCE : Il vous reste ${remainingGraceDays} jours avant suppression définitive`,
             html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 2px solid #b91c1c; border-radius: 8px;">
@@ -167,6 +170,7 @@ export async function processSubscriptionAlertJob(job: Job): Promise<void> {
               <p>Vous pouvez à tout moment exporter une copie de vos données ou régulariser votre souscription.</p>
               <p>L'équipe Naforo</p>
             </div>`,
+            service: 'admin',
           });
 
           await prisma.subscription.update({
@@ -182,7 +186,7 @@ export async function processSubscriptionAlertJob(job: Job): Promise<void> {
           logger.error(`[Lifecycle] PURGE DÉFINITIVE DES DONNÉES pour l'organisation ${sub.organization.name} (${sub.organizationId})`);
 
           // 1. Envoyer le courriel ultime
-          await emailQueue.add('send-email', {
+          await sendMail({
             to: owner.email,
             subject: `🗑️ Suppression définitive de vos données Naforo effectuée`,
             html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #64748b; border-radius: 8px;">
@@ -191,6 +195,7 @@ export async function processSubscriptionAlertJob(job: Job): Promise<void> {
               <p>La période de grâce de 90 jours pour l'organisation <strong>${sub.organization.name}</strong> étant arrivée à son terme sans réabonnement, l'ensemble de vos données a été définitivement supprimé de notre plateforme conformément à notre politique de rétention.</p>
               <p>Nous vous remercions d'avoir utilisé Naforo.</p>
             </div>`,
+            service: 'admin',
           });
 
           // 2. Suppression en cascade des données de l'organisation

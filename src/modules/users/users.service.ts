@@ -89,7 +89,7 @@ export class UsersService {
     await authRepository.createNotificationPreferences(user.id);
 
     // Send welcome email
-    sendMail(
+    await sendMail(
       user.email,
       'Bienvenue sur Naforo !',
       `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">

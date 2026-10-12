@@ -91,20 +91,23 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
     await authRepository.createOTP(user.id, otp, 'email_verification', expiresAt);
 
-    // Send verification email
-    sendMail(
+    // Send verification email (await required for Serverless / Vercel so failover completes before freeze)
+    await sendMail(
       user.email,
       'Vérifiez votre adresse email - Naforo',
       `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
-        <h2 style="color: #4f46e5;">Bienvenue sur Naforo !</h2>
+        <h2 style="color: #013E37;">Bienvenue sur Naforo !</h2>
         <p>Merci pour votre inscription. Veuillez utiliser le code OTP ci-dessous pour valider votre compte :</p>
-        <div style="background-color: #f3f4f6; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 4px; border-radius: 6px; margin: 20px 0; color: #111827;">
+        <div style="background-color: #f8fafc; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 4px; border-radius: 6px; margin: 20px 0; color: #013E37; border: 1px solid #e2e8f0;">
           ${otp}
         </div>
         <p>Ce code est valide pendant 15 minutes.</p>
         <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
         <p style="font-size: 12px; color: #6b7280;">Si vous n'avez pas créé ce compte, veuillez ignorer cet email.</p>
-      </div>`
+      </div>`,
+      undefined,
+      undefined,
+      'admin'
     ).catch((err) => logger.error('Failed to send verification email during registration', err));
 
     return { user, organization, accessToken, refreshToken };
@@ -236,8 +239,8 @@ export class AuthService {
 
     logger.info(`🔑 [OTP MOT DE PASSE OUBLIÉ] Destinataire: ${user.email} | Code OTP: ${otp}`);
 
-    // Send reset password OTP email via admin@naforo.company
-    sendMail(
+    // Send reset password OTP email via admin@naforo.company (avec bascule automatique Google Gmail)
+    await sendMail(
       user.email,
       'Réinitialisation de votre mot de passe - Naforo',
       `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">

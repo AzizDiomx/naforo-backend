@@ -4,6 +4,7 @@ import { NotFoundError, BadRequestError } from '@/shared/errors/AppError';
 import { Invoice } from '@prisma/client';
 import { getDueDate, formatDate, formatCurrency, getMonthName } from '@/shared/helpers/date';
 import { emailQueue } from '@/queues';
+import { sendMail } from '@/config/mailer';
 import { logger } from '@/config/logger';
 import path from 'path';
 import fs from 'fs';
@@ -441,9 +442,25 @@ export class InvoicesService {
 
     if (!invoice || !invoice.tenantProfile.email) return;
 
-    const attachmentPath = path.join(process.cwd(), 'uploads', 'invoices', `${invoice.invoiceNumber}.pdf`);
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const invoicesDir = isServerless
+      ? path.join(os.tmpdir(), 'uploads', 'invoices')
+      : path.join(process.cwd(), 'uploads', 'invoices');
+    const attachmentPath = path.join(invoicesDir, `${invoice.invoiceNumber}.pdf`);
 
-    await emailQueue.add('send-email', {
+    if (!fs.existsSync(attachmentPath)) {
+      try {
+        await this.generateInvoicePDF(invoiceId);
+      } catch (err) {
+        logger.warn(`Impossible de générer le PDF de facture avant envoi email (${invoice.invoiceNumber})`, err);
+      }
+    }
+
+    const attachments = fs.existsSync(attachmentPath)
+      ? [{ filename: `${invoice.invoiceNumber}.pdf`, path: attachmentPath }]
+      : undefined;
+
+    await sendMail({
       to: invoice.tenantProfile.email,
       subject: `Avis d'échéance de loyer N° ${invoice.invoiceNumber} - Naforo`,
       html: `<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
@@ -461,12 +478,8 @@ export class InvoicesService {
         <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
         <p style="font-size: 11px; color: #94a3b8; text-align: center;">Document généré automatiquement par Naforo pour ${invoice.organization.name}</p>
       </div>`,
-      attachments: [
-        {
-          filename: `${invoice.invoiceNumber}.pdf`,
-          path: attachmentPath,
-        }
-      ]
+      attachments,
+      service: 'info',
     });
   }
 }

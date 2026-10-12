@@ -89,21 +89,24 @@ export function detectServiceFromContent(subject: string, html: string): EmailSe
 // ---------------------------------------------------------------------------
 // Transporter Principal (Hostinger naforo.company)
 // ---------------------------------------------------------------------------
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 const hostingerUser = env.SMTP_USER || process.env.MAIL_USER || 'aziz.diomande@naforo.company';
 const hostingerPass = env.SMTP_PASS || process.env.MAIL_PASS;
+const isHostingerConfigured = Boolean(
+  hostingerPass &&
+  hostingerPass !== 'your_hostinger_email_password' &&
+  hostingerPass !== 'votre_mot_de_passe_messagerie_hostinger'
+);
 const isHostingerSecure = env.SMTP_SECURE !== undefined ? env.SMTP_SECURE : (env.SMTP_PORT === 465);
 
 const hostingerTransporter = nodemailer.createTransport({
   host: env.SMTP_HOST || 'smtp.hostinger.com',
   port: env.SMTP_PORT || 465,
   secure: isHostingerSecure,
-  auth: hostingerUser && hostingerPass ? { user: hostingerUser, pass: hostingerPass } : undefined,
-  pool: true,
-  maxConnections: 5,
-  maxMessages: 100,
-  connectionTimeout: 8000,
-  greetingTimeout: 5000,
-  socketTimeout: 10000,
+  auth: hostingerUser && isHostingerConfigured ? { user: hostingerUser, pass: hostingerPass } : undefined,
+  connectionTimeout: 3500,
+  greetingTimeout: 3000,
+  socketTimeout: 5000,
 });
 
 // ---------------------------------------------------------------------------
@@ -118,9 +121,9 @@ const googleTransporter = nodemailer.createTransport({
   port: env.GMAIL_SMTP_PORT || 587,
   secure: isGmailSecure,
   auth: gmailUser && gmailPass ? { user: gmailUser, pass: gmailPass } : undefined,
-  connectionTimeout: 8000,
-  greetingTimeout: 5000,
-  socketTimeout: 10000,
+  connectionTimeout: 5000,
+  greetingTimeout: 4000,
+  socketTimeout: 6000,
 });
 
 // Alias pour compatibilité
@@ -227,7 +230,7 @@ export async function sendMail(
   // =========================================================================
   // TENTATIVE 1 : Envoi via Hostinger (Provider Principal)
   // =========================================================================
-  if (hostingerPass) {
+  if (isHostingerConfigured) {
     try {
       await hostingerTransporter.sendMail({
         from: sender.from,
