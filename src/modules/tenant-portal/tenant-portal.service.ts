@@ -1,13 +1,24 @@
-﻿import * as repo from './tenant-portal.repository';
+import * as repo from './tenant-portal.repository';
 import { prisma } from '@/config/database';
 import { NotFoundError, BadRequestError } from '@/shared/errors/AppError';
 import { dispatchNotification } from '@/shared/helpers/notification';
+import { getOrganizationSubscriptionFeatures } from '@/shared/middlewares/subscription.middleware';
+
+export async function getTenantFeatures(userId: string) {
+  const profile = await repo.findTenantProfileByUserId(userId);
+  if (!profile) {
+    throw new NotFoundError("Aucun profil locataire associé à ce compte.");
+  }
+  return await getOrganizationSubscriptionFeatures(profile.organizationId);
+}
 
 export async function getTenantOverview(userId: string) {
   const profile = await repo.findTenantProfileByUserId(userId);
   if (!profile) {
     throw new NotFoundError("Aucun profil locataire associé à ce compte.");
   }
+
+  const orgFeatures = await getOrganizationSubscriptionFeatures(profile.organizationId);
 
   const activeContract = await repo.findActiveContractByTenantId(profile.id);
   let dueInvoice = null;
@@ -20,6 +31,7 @@ export async function getTenantOverview(userId: string) {
   const incidents = await repo.findIncidentsByTenantId(profile.id);
 
   return {
+    organization: orgFeatures,
     profile: {
       id: profile.id,
       firstName: profile.firstName,
@@ -28,6 +40,7 @@ export async function getTenantOverview(userId: string) {
       email: profile.email || profile.user?.email,
       reliabilityScore: profile.reliabilityScore || 100,
       avatarUrl: profile.avatarUrl,
+      organizationId: profile.organizationId,
     },
     activeContract: activeContract ? {
       id: activeContract.id,

@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { chatController } from './chat.controller';
 import { authenticate } from '@/shared/middlewares/auth.middleware';
 import { authorize } from '@/shared/middlewares/rbac.middleware';
+import { requirePlanFeature } from '@/shared/middlewares/subscription.middleware';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(requirePlanFeature('chat_encrypted', 'Messagerie instantanée'));
 
 /**
  * @route GET /api/v1/chat/threads
@@ -31,13 +33,11 @@ router.get('/tenant-thread', authorize('tenant'), chatController.getTenantThread
  */
 router.get('/threads/:threadId/messages', chatController.getMessages);
 
-import { requirePlanFeature } from '@/shared/middlewares/subscription.middleware';
-
 /**
  * @route POST /api/v1/chat/threads/:threadId/messages
  * Send message in a thread (Encrypted chat feature)
  */
-router.post('/threads/:threadId/messages', requirePlanFeature('chat_encrypted', 'Tchat Locataire Chiffré AES-256'), chatController.sendMessage);
+router.post('/threads/:threadId/messages', chatController.sendMessage);
 
 /**
  * @route PUT /api/v1/chat/messages/:messageId

@@ -12,6 +12,12 @@ router.use(authenticate);
 router.use(authorize('tenant', 'admin', 'manager'));
 
 /**
+ * @route   GET /api/v1/tenant-portal/features
+ * @desc    Get subscription features and limits for tenant's organization (e.g. hasChat, planCode)
+ */
+router.get('/features', tenantPortalController.getTenantFeatures);
+
+/**
  * @route   GET /api/v1/tenant-portal/me
  * @desc    Get logged-in tenant dashboard overview (Profile, Active Contract, Due Invoice, Score)
  */

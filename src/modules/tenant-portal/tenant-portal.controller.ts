@@ -2,6 +2,11 @@ import { Request, Response } from 'express';
 import * as tenantPortalService from './tenant-portal.service';
 import { sendSuccess, asyncHandler } from '@/shared/helpers/response';
 
+export const getTenantFeatures = asyncHandler(async (req: Request, res: Response) => {
+  const data = await tenantPortalService.getTenantFeatures(req.user!.userId);
+  return sendSuccess(res, data, "Fonctionnalités du forfait récupérées");
+});
+
 export const getTenantOverview = asyncHandler(async (req: Request, res: Response) => {
   const data = await tenantPortalService.getTenantOverview(req.user!.userId);
   return sendSuccess(res, data, "Données de bord locataire récupérées avec succès");
