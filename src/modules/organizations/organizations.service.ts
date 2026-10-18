@@ -5,8 +5,9 @@ import { PaginationQuery, PaginationMeta } from '@/shared/types';
 import { buildPaginationMeta } from '@/shared/helpers/pagination';
 import { prisma } from '@/config/database';
 import bcrypt from 'bcryptjs';
-import { sendMail } from '@/config/mailer';
+import { sendMail, organizationWelcome } from '@/config/mailer';
 import { logger } from '@/config/logger';
+import { env } from '@/config/env';
 
 export class OrganizationsService {
   async getAllOrganizations(
@@ -25,12 +26,22 @@ export class OrganizationsService {
     return organization;
   }
 
-  async createOrganization(data: any): Promise<Organization> {
-    const org = await organizationsRepository.create(data);
+  async createOrganization(data: any): Promise<any> {
+    const {
+      adminFirstName,
+      adminLastName,
+      adminEmail,
+      adminPassword,
+      sendCredentialsEmail = true,
+      ...orgData
+    } = data;
 
-    // Initialiser l'abonnement correspondant au plan choisi
+    // 1. Créer l'organisation
+    const org = await organizationsRepository.create(orgData);
+
+    // 2. Initialiser l'abonnement correspondant au plan choisi
     try {
-      const planCode = data.plan || 'starter';
+      const planCode = orgData.plan || 'starter';
       const plan = await prisma.subscriptionPlan.findUnique({ where: { code: planCode } });
       if (plan) {
         const oneYearFromNow = new Date();
@@ -49,7 +60,108 @@ export class OrganizationsService {
       logger.warn('Abonnement initial non créé pour organisation:', subErr);
     }
 
-    return org;
+    // 3. Provisionner l'administrateur si un email est fourni
+    const targetAdminEmail = (adminEmail || orgData.email || '').trim().toLowerCase();
+    let generatedCredentials: {
+      email: string;
+      tempPassword?: string;
+      adminName: string;
+      emailSent: boolean;
+    } | null = null;
+
+    if (targetAdminEmail) {
+      const firstName = (adminFirstName || 'Admin').trim();
+      const lastName = (adminLastName || org.name).trim();
+      const rawPassword = adminPassword && adminPassword.trim().length >= 6
+        ? adminPassword.trim()
+        : `Naforo${Math.floor(100000 + Math.random() * 900000)}!`;
+
+      try {
+        const existingUser = await prisma.user.findUnique({ where: { email: targetAdminEmail } });
+        let user;
+
+        if (existingUser) {
+          user = await prisma.user.update({
+            where: { id: existingUser.id },
+            data: {
+              organizationId: org.id,
+              role: existingUser.role === 'super_admin' ? 'super_admin' : 'admin',
+              phone: existingUser.phone || orgData.phone || null,
+            },
+          });
+          logger.info(`Utilisateur existant ${targetAdminEmail} rattaché en tant qu'admin à l'organisation ${org.name}`);
+        } else {
+          const passwordHash = await bcrypt.hash(rawPassword, 12);
+          user = await prisma.user.create({
+            data: {
+              organizationId: org.id,
+              email: targetAdminEmail,
+              phone: orgData.phone || null,
+              passwordHash,
+              firstName,
+              lastName,
+              role: 'admin',
+              isActive: true,
+              isEmailVerified: true,
+            },
+          });
+
+          await prisma.notificationPreference.create({
+            data: {
+              userId: user.id,
+              emailEnabled: true,
+              smsEnabled: false,
+              pushEnabled: true,
+              reminderEnabled: true,
+            },
+          }).catch((prefErr) => {
+            logger.warn('Préférences de notification non initialisées pour nouvel admin:', prefErr);
+          });
+
+          logger.info(`Nouvel administrateur créé pour l'organisation ${org.name}: ${targetAdminEmail}`);
+        }
+
+        let emailSent = false;
+        if (sendCredentialsEmail) {
+          try {
+            const loginUrl = `${env.BACKOFFICE_URL}/login`;
+            const emailHtml = organizationWelcome({
+              orgName: org.name,
+              adminName: `${firstName} ${lastName}`.trim(),
+              email: targetAdminEmail,
+              tempPassword: rawPassword,
+              loginUrl,
+              planName: orgData.plan || 'starter',
+            });
+
+            emailSent = await sendMail({
+              to: targetAdminEmail,
+              subject: `Bienvenue sur Naforo - Vos identifiants de connexion pour ${org.name}`,
+              html: emailHtml,
+              service: 'contact',
+            });
+
+            logger.info(`Email de bienvenue avec identifiants envoyé à ${targetAdminEmail} (succès: ${emailSent})`);
+          } catch (mailErr: any) {
+            logger.error(`Échec lors de l'envoi du mail de bienvenue à ${targetAdminEmail}:`, mailErr);
+          }
+        }
+
+        generatedCredentials = {
+          email: targetAdminEmail,
+          tempPassword: rawPassword,
+          adminName: `${firstName} ${lastName}`.trim(),
+          emailSent,
+        };
+      } catch (userErr: any) {
+        logger.error(`Erreur lors de la création de l'administrateur pour ${org.name}:`, userErr);
+      }
+    }
+
+    return {
+      ...org,
+      generatedCredentials,
+    };
   }
 
   async updateOrganization(id: string, data: any): Promise<Organization> {

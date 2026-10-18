@@ -9,6 +9,11 @@ export const CreateOrganizationSchema = z.object({
     city: z.string().optional().nullable(),
     country: z.string().max(5).default('CI'),
     plan: z.string().default('starter'),
+    adminFirstName: z.string().optional().nullable(),
+    adminLastName: z.string().optional().nullable(),
+    adminEmail: z.string().email('Format d\'adresse email invalide.').optional().nullable(),
+    adminPassword: z.string().min(6).optional().nullable(),
+    sendCredentialsEmail: z.boolean().default(true),
   }),
 });
 

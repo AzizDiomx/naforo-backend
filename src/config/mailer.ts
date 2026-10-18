@@ -609,6 +609,68 @@ export function welcome(params: WelcomeParams): string {
   `);
 }
 
+export interface OrganizationWelcomeParams {
+  orgName: string;
+  adminName: string;
+  email: string;
+  tempPassword?: string;
+  loginUrl?: string;
+  planName?: string;
+}
+
+export function organizationWelcome(params: OrganizationWelcomeParams): string {
+  const planLabel = params.planName ? params.planName.toUpperCase() : 'STARTER';
+  return baseLayout('Bienvenue sur Naforo - Votre Espace Organisation est Prêt !', `
+    <div style="text-align: center; margin-bottom: 24px;">
+      <span class="status-badge status-success" style="font-size: 12px; padding: 6px 16px;">
+        ✓ Organisation Activée & Compte Administrateur Configuré
+      </span>
+    </div>
+
+    <div class="title" style="text-align: center; margin-bottom: 8px;">
+      Bienvenue sur Naforo !
+    </div>
+    <p class="text" style="text-align: center; margin-bottom: 24px;">
+      Bonjour <strong>${params.adminName}</strong>, l'administration générale de la plateforme Naforo vient de créer et configurer l'espace de gestion pour votre organisation <strong>${params.orgName}</strong>.
+    </p>
+
+    <div class="highlight-box" style="text-align: center;">
+      <div class="label">Organisation & Formule</div>
+      <div class="value" style="font-size: 20px;">${params.orgName} <span style="font-size: 14px; opacity: 0.85;">(${planLabel})</span></div>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-row">
+        <div class="info-cell label">Identifiant / E-mail</div>
+        <div class="info-cell value" style="color: #013E37; font-weight: 700;">${params.email}</div>
+      </div>
+      <div class="info-row">
+        <div class="info-cell label">Rôle attribué</div>
+        <div class="info-cell value">Administrateur Organisation (Gestionnaire Principal)</div>
+      </div>
+      ${params.tempPassword ? `
+      <div class="info-row">
+        <div class="info-cell label">Mot de passe temporaire</div>
+        <div class="info-cell value" style="font-family: monospace; font-size: 16px; color: #d97706; font-weight: 700; letter-spacing: 0.05em;">${params.tempPassword}</div>
+      </div>` : ''}
+    </div>
+
+    <div class="attachment-notice" style="border-left-color: #013E37; background: rgba(1, 62, 55, 0.04); margin-top: 20px;">
+      🔒 <strong>Conseil de Sécurité :</strong> Pour garantir la confidentialité de vos données immobilières et financières, nous vous recommandons vivement de modifier ce mot de passe temporaire dès votre première connexion dans les paramètres de votre profil.
+    </div>
+
+    <div style="text-align: center; margin-top: 28px;">
+      <a href="${params.loginUrl ?? (env.BACKOFFICE_URL + '/login')}" class="btn" style="background-color: #013E37;">
+        🚀 Accéder à mon Espace Naforo
+      </a>
+    </div>
+
+    <p class="text" style="font-size: 12px; color: #64748b; text-align: center; margin-top: 20px;">
+      Une question ou un accompagnement lors de votre prise en main ? Notre équipe est à votre disposition à <a href="mailto:contact@naforo.company" style="color: #013E37; font-weight: 600;">contact@naforo.company</a> ou <a href="mailto:support@naforo.company" style="color: #013E37; font-weight: 600;">support@naforo.company</a>.
+    </p>
+  `);
+}
+
 export interface PasswordResetParams {
   firstName: string;
   otp: string;
