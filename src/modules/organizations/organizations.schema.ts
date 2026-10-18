@@ -7,8 +7,8 @@ export const CreateOrganizationSchema = z.object({
     phone: z.string().min(8, 'Le numéro de téléphone doit contenir au moins 8 chiffres.').optional().nullable(),
     address: z.string().optional().nullable(),
     city: z.string().optional().nullable(),
-    country: z.string().max(3).default('CI'),
-    plan: z.enum(['starter', 'pro', 'enterprise']).default('starter'),
+    country: z.string().max(5).default('CI'),
+    plan: z.string().default('starter'),
   }),
 });
 
@@ -19,6 +19,8 @@ export const UpdateOrganizationSchema = z.object({
     phone: z.string().min(8, 'Le numéro de téléphone doit contenir au moins 8 chiffres.').optional().nullable(),
     address: z.string().optional().nullable(),
     city: z.string().optional().nullable(),
+    country: z.string().max(5).optional(),
+    plan: z.string().optional(),
     logoUrl: z.string().url('L\'URL du logo doit être valide.').optional().nullable(),
     isActive: z.boolean().optional(),
     settings: z.record(z.any()).optional(),

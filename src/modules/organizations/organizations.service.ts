@@ -1,4 +1,4 @@
-﻿import { organizationsRepository } from './organizations.repository';
+import { organizationsRepository } from './organizations.repository';
 import { NotFoundError, BadRequestError } from '@/shared/errors/AppError';
 import { Organization } from '@prisma/client';
 import { PaginationQuery, PaginationMeta } from '@/shared/types';
@@ -11,13 +11,13 @@ import { logger } from '@/config/logger';
 export class OrganizationsService {
   async getAllOrganizations(
     query: PaginationQuery
-  ): Promise<{ data: Organization[]; meta: PaginationMeta }> {
+  ): Promise<{ data: any[]; meta: PaginationMeta }> {
     const { organizations, total } = await organizationsRepository.findAll(query);
     const meta = buildPaginationMeta(total, query.page, query.limit);
     return { data: organizations, meta };
   }
 
-  async getOrganizationById(id: string): Promise<Organization> {
+  async getOrganizationById(id: string): Promise<any> {
     const organization = await organizationsRepository.findById(id);
     if (!organization) {
       throw new NotFoundError('Organisation introuvable.');
@@ -26,12 +26,72 @@ export class OrganizationsService {
   }
 
   async createOrganization(data: any): Promise<Organization> {
-    return organizationsRepository.create(data);
+    const org = await organizationsRepository.create(data);
+
+    // Initialiser l'abonnement correspondant au plan choisi
+    try {
+      const planCode = data.plan || 'starter';
+      const plan = await prisma.subscriptionPlan.findUnique({ where: { code: planCode } });
+      if (plan) {
+        const oneYearFromNow = new Date();
+        oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+        await prisma.subscription.create({
+          data: {
+            organizationId: org.id,
+            planId: plan.id,
+            startDate: new Date(),
+            endDate: oneYearFromNow,
+            status: 'active',
+          },
+        });
+      }
+    } catch (subErr) {
+      logger.warn('Abonnement initial non créé pour organisation:', subErr);
+    }
+
+    return org;
   }
 
   async updateOrganization(id: string, data: any): Promise<Organization> {
     await this.getOrganizationById(id);
-    return organizationsRepository.update(id, data);
+    const updated = await organizationsRepository.update(id, data);
+
+    // Si le plan est modifié, synchroniser également la table subscription
+    if (data.plan) {
+      try {
+        const plan = await prisma.subscriptionPlan.findUnique({ where: { code: data.plan } });
+        if (plan) {
+          const oneYearFromNow = new Date();
+          oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+
+          const existingSub = await prisma.subscription.findFirst({
+            where: { organizationId: id },
+            orderBy: { endDate: 'desc' },
+          });
+
+          if (existingSub) {
+            await prisma.subscription.update({
+              where: { id: existingSub.id },
+              data: { planId: plan.id, status: 'active' },
+            });
+          } else {
+            await prisma.subscription.create({
+              data: {
+                organizationId: id,
+                planId: plan.id,
+                startDate: new Date(),
+                endDate: oneYearFromNow,
+                status: 'active',
+              },
+            });
+          }
+        }
+      } catch (err) {
+        logger.warn('Synchronisation abonnement échouée lors de la mise à jour organisation:', err);
+      }
+    }
+
+    return updated;
   }
 
   async getOrganizationStats(id: string): Promise<any> {

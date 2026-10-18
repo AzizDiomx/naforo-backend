@@ -14,8 +14,8 @@ async function main() {
     where: { email: 'demo@naforo.com' },
     update: {},
     create: {
-      name: 'BAILFLOW Demo',
-      email: 'demo@bailflow.ci',
+      name: 'Naforo Demo',
+      email: 'demo@naforo.com',
       phone: '+2250700000000',
       address: 'Plateau, Abidjan',
       city: 'Abidjan',
