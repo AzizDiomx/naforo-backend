@@ -165,6 +165,8 @@ export class ChatService {
         await dispatchNotification({
           organizationId: thread.organizationId,
           userId: admin.id,
+          email: admin.email,
+          phone: admin.phone,
           type: 'CHAT_MESSAGE',
           title: `Nouveau message de ${thread.tenantProfile.firstName} ${thread.tenantProfile.lastName}`,
           emailSubject: `Nouveau message locataire - Naforo`,
