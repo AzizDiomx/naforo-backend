@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import { formatCurrency, formatDate } from '@/shared/helpers/date';
 
@@ -42,14 +43,17 @@ export async function generateSubscriptionInvoicePdf(
   payment: SubscriptionInvoicePdfParams,
   convertedAmounts: ConvertedAmounts
 ): Promise<string> {
-  const dir = path.join(process.cwd(), 'uploads', 'subscription-invoices');
+  const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  const dir = isServerless
+    ? path.join(os.tmpdir(), 'uploads', 'subscription-invoices')
+    : path.join(process.cwd(), 'uploads', 'subscription-invoices');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
   const filename = `${payment.paymentReference}.pdf`;
-  const relativePath = `uploads/subscription-invoices/${filename}`;
-  const absolutePath = path.join(process.cwd(), relativePath);
+  const relativePath = `/uploads/subscription-invoices/${filename}`;
+  const absolutePath = path.join(dir, filename);
 
   // A4 dimensions: 595.28 x 841.89 points
   const doc = new PDFDocument({ size: 'A4', margin: 40 });

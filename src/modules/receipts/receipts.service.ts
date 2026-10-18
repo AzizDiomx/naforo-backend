@@ -100,7 +100,7 @@ export class ReceiptsService {
     return receipt;
   }
 
-  async generateReceiptPDF(receiptId: string): Promise<string> {
+  async generateReceiptPDF(receiptId: string, sendEmail: boolean = true): Promise<string> {
     const receipt = await prisma.receipt.findUnique({
       where: { id: receiptId },
       include: {
@@ -241,9 +241,11 @@ export class ReceiptsService {
     });
 
     // Send receipt email directly (with Hostinger -> Google Gmail automatic failover)
-    await this.sendReceiptEmail(receiptId).catch((err) =>
-      logger.warn(`Impossible d'envoyer l'email de quittance (${receipt.receiptNumber})`, err)
-    );
+    if (sendEmail) {
+      await this.sendReceiptEmail(receiptId).catch((err) =>
+        logger.warn(`Impossible d'envoyer l'email de quittance (${receipt.receiptNumber})`, err)
+      );
+    }
 
     return relativePath;
   }

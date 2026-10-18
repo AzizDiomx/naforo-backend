@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs';
 import { sendMail, welcome } from '@/config/mailer';
 import { dispatchNotification } from '@/shared/helpers/notification';
 import { logger } from '@/config/logger';
+import { env } from '@/config/env';
 
 export class TenantProfilesService {
   async getAllTenantProfiles(
@@ -106,15 +107,16 @@ export class TenantProfilesService {
 
         // Envoyer les identifiants d'accès (Email avec fallback SMS automatique)
         try {
+          const loginUrl = `${env.FRONTEND_URL}/login`;
           const emailHtml = welcome({
             firstName: data.firstName,
             email,
             role: 'Locataire',
             tempPassword,
-            loginUrl: 'http://localhost:3003/login',
+            loginUrl,
           });
 
-          const smsText = `Naforo: Bonjour ${data.firstName}, vos identifiants Espace Locataire: Email: ${email}, Mot de passe: ${tempPassword}. Connectez-vous sur: http://localhost:3003/login`;
+          const smsText = `Naforo: Bonjour ${data.firstName}, vos identifiants Espace Locataire: Email: ${email}, Mot de passe: ${tempPassword}. Connectez-vous sur: ${loginUrl}`;
 
           await dispatchNotification({
             organizationId,

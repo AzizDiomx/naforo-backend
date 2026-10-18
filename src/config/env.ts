@@ -30,7 +30,7 @@ const envSchema = z.object({
     .transform((v) => parseInt(v, 10))
     .default('3000'),
   API_PREFIX: z.string().default('/api/v1'),
-  CORS_ORIGINS: z.string().default('https://backoffice.naforo.company,https://tenant.naforo.company,https://naforo.company,http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004'),
+  CORS_ORIGINS: z.string().default('https://backend.naforo.company,https://backoffice.naforo.company,https://tenant.naforo.company,https://naforo.company,http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004'),
 
   // Database
   DATABASE_URL: z.string().optional(),
@@ -112,9 +112,9 @@ const envSchema = z.object({
     .default('image/jpeg,image/png,image/webp,application/pdf'),
 
   // URLs
-  APP_URL: z.string().url().default('http://localhost:3000'),
-  FRONTEND_URL: z.string().url().default('http://localhost:3001'),
-  BACKOFFICE_URL: z.string().url().default('http://localhost:3002'),
+  APP_URL: z.string().url().default(process.env.APP_URL || 'https://backend.naforo.company'),
+  FRONTEND_URL: z.string().url().default(process.env.FRONTEND_URL || 'https://tenant.naforo.company'),
+  BACKOFFICE_URL: z.string().url().default(process.env.BACKOFFICE_URL || 'https://backoffice.naforo.company'),
 
   // Logging
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly']).default('debug'),
