@@ -131,13 +131,16 @@ export class DashboardService {
       const diffTime = expirationDate.getTime() - today.getTime();
       subscriptionDaysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       
-      const isExpired = today > expirationDate && activeSub.plan.code !== 'starter';
+      const isStarter = activeSub.plan.code === 'starter';
+      const isTrialExpired = isStarter && subscriptionDaysLeft <= 0;
+      const isPaidExpired = !isStarter && subscriptionDaysLeft <= 0;
+      const isExpired = isTrialExpired || isPaidExpired;
       const daysSinceExpiration = isExpired ? Math.abs(subscriptionDaysLeft) : 0;
-      isSuspended = activeSub.status === 'suspended' || (isExpired && daysSinceExpiration <= 5);
-      isDeactivated = activeSub.status === 'deactivated' || (isExpired && daysSinceExpiration > 5);
+      isSuspended = activeSub.status === 'suspended' || isTrialExpired || (isPaidExpired && daysSinceExpiration <= 5);
+      isDeactivated = activeSub.status === 'deactivated' || (isPaidExpired && daysSinceExpiration > 5);
 
-      // Alerte J-5, suspendu ou désactivé
-      if (subscriptionDaysLeft <= 5 || isSuspended || isDeactivated) {
+      // Alerte J-5, suspendu, désactivé ou essai Starter terminé
+      if (subscriptionDaysLeft <= 5 || isSuspended || isDeactivated || isTrialExpired) {
         subscriptionAlert = true;
       }
 
@@ -145,9 +148,12 @@ export class DashboardService {
         planName: activeSub.plan.name,
         planCode: activeSub.plan.code,
         endDate: activeSub.endDate,
-        status: isDeactivated ? 'deactivated' : (isSuspended ? 'suspended' : (isExpired ? 'expired' : activeSub.status)),
+        status: isDeactivated ? 'deactivated' : (isSuspended ? 'suspended' : (isTrialExpired ? 'trial_expired' : (isExpired ? 'expired' : activeSub.status))),
         isSuspended,
         isDeactivated,
+        isTrialExpired,
+        isStarter,
+        daysLeft: subscriptionDaysLeft,
         daysSinceExpiration,
       };
     }

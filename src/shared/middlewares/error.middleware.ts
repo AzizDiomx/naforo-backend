@@ -48,7 +48,7 @@ export function errorMiddleware(
 
   // 2. Custom AppError (operational)
   if (err instanceof AppError) {
-    sendError(res, err.message, err.statusCode, (err as any).errors);
+    sendError(res, err.message, err.statusCode, (err as any).errors, (err as any).code);
     return;
   }
 

@@ -6,6 +6,7 @@ export interface ApiResponse<T = any> {
   message?: string;
   data?: T;
   errors?: any;
+  code?: string;
 }
 
 export interface ApiPaginatedResponse<T = any> {
@@ -38,12 +39,14 @@ export function sendError(
   res: Response,
   message: string,
   statusCode = 500,
-  errors?: any
+  errors?: any,
+  code?: string
 ): Response<ApiResponse<null>> {
   return res.status(statusCode).json({
     success: false,
     message,
     errors,
+    ...(code && { code }),
   });
 }
 

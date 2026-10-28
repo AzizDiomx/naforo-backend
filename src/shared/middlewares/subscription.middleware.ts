@@ -31,18 +31,34 @@ export async function checkSubscription(req: Request, res: Response, next: NextF
     if (activeSub) {
       const now = new Date();
       const isStarter = activeSub.plan.code === 'starter';
-      const isPastEndDate = now > new Date(activeSub.endDate);
+      const isExpired = now > new Date(activeSub.endDate);
 
-      if (isStarter && isPastEndDate) {
-        throw new ForbiddenError(
-          "PÉRIODE D'ESSAI TERMINÉE : Vos 60 jours d'essai gratuit de l'offre Starter sont arrivés à échéance. Veuillez souscrire à une formule d'abonnement ou contacter les administrateurs pour continuer."
+      if (isStarter && isExpired) {
+        const err = new ForbiddenError(
+          "Votre période d'essai gratuit du forfait Starter est arrivée à son terme. Votre espace est configuré en lecture seule. Veuillez souscrire à une formule Pro ou Expert pour réactiver vos accès d'écriture."
         );
+        (err as any).code = 'TRIAL_EXPIRED';
+        (err as any).errors = {
+          trialExpired: true,
+          planCode: 'starter',
+          planName: 'Starter',
+          expiredAt: activeSub.endDate,
+        };
+        throw err;
       }
 
-      if (!isStarter && (activeSub.status === 'suspended' || isPastEndDate)) {
-        throw new ForbiddenError(
+      if (!isStarter && (activeSub.status === 'suspended' || isExpired)) {
+        const err = new ForbiddenError(
           `Votre abonnement a expiré le ${new Date(activeSub.endDate).toLocaleDateString('fr-FR')}. Votre espace est configuré en lecture seule. Veuillez déclarer un renouvellement d'abonnement pour réactiver les droits d'écriture.`
         );
+        (err as any).code = 'SUBSCRIPTION_EXPIRED';
+        (err as any).errors = {
+          subscriptionExpired: true,
+          planCode: activeSub.plan.code,
+          planName: activeSub.plan.name,
+          expiredAt: activeSub.endDate,
+        };
+        throw err;
       }
     }
 

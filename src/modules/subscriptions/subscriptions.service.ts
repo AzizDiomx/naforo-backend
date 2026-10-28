@@ -154,8 +154,9 @@ export class SubscriptionsService {
     // Calcul précis des jours et de l'état du cycle de vie
     const diffTime = endDate.getTime() - now.getTime();
     const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const isStarterTrialExpired = isStarter && daysRemaining <= 0;
-    const isExpired = isStarterTrialExpired || (!isStarter && daysRemaining <= 0);
+    const isTrialExpired = isStarter && daysRemaining <= 0;
+    const isPaidExpired = !isStarter && daysRemaining <= 0;
+    const isExpired = isTrialExpired || isPaidExpired;
     const daysSinceExpiration = isExpired ? Math.abs(daysRemaining) : 0;
 
     let status = subscription.status;
@@ -165,10 +166,10 @@ export class SubscriptionsService {
     let deactivationReason: string | null = null;
     let remainingGraceDays: number | null = null;
 
-    if (isStarterTrialExpired) {
-      status = 'starter_expired';
+    if (isTrialExpired) {
+      status = 'trial_expired';
       isSuspended = true;
-      suspensionReason = "Votre période d'essai de 60 jours du forfait Starter est arrivée à son terme. Veuillez souscrire à une formule d'abonnement ou contacter les administrateurs pour continuer à gérer votre patrimoine.";
+      suspensionReason = "Votre période d'essai gratuit du forfait Starter est arrivée à son terme. Vos données sont conservées en toute sécurité en mode LECTURE SEULE. Veuillez souscrire à une formule Pro ou Expert pour réactiver vos accès d'écriture.";
     } else if (!isStarter && isExpired) {
       if (daysSinceExpiration <= 5) {
         // J0 à J+5 : Suspension (Mode Lecture Seule)
@@ -268,10 +269,11 @@ export class SubscriptionsService {
       endDate: subscription.endDate,
       status,
       isStarter,
-      isStarterTrialExpired,
+      isExpired,
+      isTrialExpired,
+      isStarterTrialExpired: isTrialExpired,
       starterTrialDaysTotal: 60,
       starterTrialDaysLeft: isStarter ? Math.max(0, daysRemaining) : null,
-      isExpired,
       isSuspended,
       isDeactivated,
       suspensionReason,
@@ -285,8 +287,7 @@ export class SubscriptionsService {
         email: 'contact@naforo.company',
         supportEmail: 'support@naforo.company',
         phone: '+225 07 00 00 00 00',
-        whatsapp: '+225 07 00 00 00 00',
-        whatsappUrl: 'https://wa.me/2250700000000',
+        whatsapp: '+2250700000000',
       },
       quotas: {
         properties: {

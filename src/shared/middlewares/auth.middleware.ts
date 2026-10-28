@@ -83,18 +83,34 @@ export const authenticate = asyncHandler(
           if (sub) {
             const now = new Date();
             const isStarter = sub.plan.code === 'starter';
-            const isPastEndDate = now > new Date(sub.endDate);
+            const isExpired = now > new Date(sub.endDate);
 
-            if (isStarter && isPastEndDate) {
-              throw new ForbiddenError(
-                "PÉRIODE D'ESSAI TERMINÉE : Vos 60 jours d'essai gratuit de l'offre Starter sont arrivés à échéance. Veuillez souscrire à une formule d'abonnement ou contacter les administrateurs pour continuer."
+            if (isStarter && isExpired) {
+              const err = new ForbiddenError(
+                "Votre période d'essai gratuit du forfait Starter est arrivée à son terme. Votre espace est en mode LECTURE SEULE. Veuillez souscrire à une formule Pro ou Expert pour réactiver vos accès d'écriture."
               );
+              (err as any).code = 'TRIAL_EXPIRED';
+              (err as any).errors = {
+                trialExpired: true,
+                planCode: 'starter',
+                planName: 'Starter',
+                expiredAt: sub.endDate,
+              };
+              throw err;
             }
 
-            if (!isStarter && (sub.status === 'suspended' || isPastEndDate)) {
-              throw new ForbiddenError(
+            if (!isStarter && (sub.status === 'suspended' || isExpired)) {
+              const err = new ForbiddenError(
                 "Votre abonnement est suspendu pour défaut de paiement. Votre espace est en mode LECTURE SEULE. Veuillez déclarer votre réabonnement pour effectuer cette action."
               );
+              (err as any).code = 'SUBSCRIPTION_EXPIRED';
+              (err as any).errors = {
+                subscriptionExpired: true,
+                planCode: sub.plan.code,
+                planName: sub.plan.name,
+                expiredAt: sub.endDate,
+              };
+              throw err;
             }
           }
         }
