@@ -80,9 +80,18 @@ export const authenticate = asyncHandler(
             orderBy: { endDate: 'desc' },
           });
 
-          if (sub && sub.plan.code !== 'starter') {
+          if (sub) {
             const now = new Date();
-            if (sub.status === 'suspended' || now > new Date(sub.endDate)) {
+            const isStarter = sub.plan.code === 'starter';
+            const isPastEndDate = now > new Date(sub.endDate);
+
+            if (isStarter && isPastEndDate) {
+              throw new ForbiddenError(
+                "PÉRIODE D'ESSAI TERMINÉE : Vos 60 jours d'essai gratuit de l'offre Starter sont arrivés à échéance. Veuillez souscrire à une formule d'abonnement ou contacter les administrateurs pour continuer."
+              );
+            }
+
+            if (!isStarter && (sub.status === 'suspended' || isPastEndDate)) {
               throw new ForbiddenError(
                 "Votre abonnement est suspendu pour défaut de paiement. Votre espace est en mode LECTURE SEULE. Veuillez déclarer votre réabonnement pour effectuer cette action."
               );

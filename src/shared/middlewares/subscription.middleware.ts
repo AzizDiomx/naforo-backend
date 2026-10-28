@@ -28,9 +28,18 @@ export async function checkSubscription(req: Request, res: Response, next: NextF
       orderBy: { endDate: 'desc' },
     });
 
-    if (activeSub && activeSub.plan.code !== 'starter') {
+    if (activeSub) {
       const now = new Date();
-      if (activeSub.status === 'suspended' || now > new Date(activeSub.endDate)) {
+      const isStarter = activeSub.plan.code === 'starter';
+      const isPastEndDate = now > new Date(activeSub.endDate);
+
+      if (isStarter && isPastEndDate) {
+        throw new ForbiddenError(
+          "PÉRIODE D'ESSAI TERMINÉE : Vos 60 jours d'essai gratuit de l'offre Starter sont arrivés à échéance. Veuillez souscrire à une formule d'abonnement ou contacter les administrateurs pour continuer."
+        );
+      }
+
+      if (!isStarter && (activeSub.status === 'suspended' || isPastEndDate)) {
         throw new ForbiddenError(
           `Votre abonnement a expiré le ${new Date(activeSub.endDate).toLocaleDateString('fr-FR')}. Votre espace est configuré en lecture seule. Veuillez déclarer un renouvellement d'abonnement pour réactiver les droits d'écriture.`
         );
