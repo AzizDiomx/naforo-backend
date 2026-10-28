@@ -10,9 +10,10 @@ import { generateContractNumber } from '@/shared/helpers/crypto';
 export class ContractsService {
   async getAllContracts(
     organizationId: string,
-    query: PaginationQuery & { status?: string; propertyId?: string; tenantProfileId?: string }
+    query: PaginationQuery & { status?: string; propertyId?: string; tenantProfileId?: string },
+    user?: { role: string; userId: string }
   ): Promise<{ data: Contract[]; meta: PaginationMeta }> {
-    const { contracts, total } = await contractsRepository.findAll(organizationId, query);
+    const { contracts, total } = await contractsRepository.findAll(organizationId, query, user);
     const meta = buildPaginationMeta(total, query.page, query.limit);
     return { data: contracts, meta };
   }

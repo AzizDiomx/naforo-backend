@@ -41,3 +41,32 @@ export const updateFCMToken = asyncHandler(async (req: Request, res: Response) =
   await usersService.updateFCMToken(req.user!.userId, req.body.fcmToken);
   return sendSuccess(res, null, 'Token de notification Push mis à jour.');
 });
+
+export const getManagers = asyncHandler(async (req: Request, res: Response) => {
+  const managers = await usersService.getManagers(req.organizationId!);
+  return sendSuccess(res, managers, 'Gestionnaires et collaborateurs récupérés avec succès.');
+});
+
+export const createManager = asyncHandler(async (req: Request, res: Response) => {
+  const manager = await usersService.createManager(req.organizationId!, req.body);
+  return sendSuccess(res, manager, 'Collaborateur créé avec succès.', 201);
+});
+
+export const updateManagerPortfolio = asyncHandler(async (req: Request, res: Response) => {
+  const updated = await usersService.updateManagerPortfolio(
+    req.organizationId!,
+    req.params.id,
+    req.body.propertyIds
+  );
+  return sendSuccess(res, updated, 'Portefeuille du gestionnaire mis à jour avec succès.');
+});
+
+export const updateManagerStatus = asyncHandler(async (req: Request, res: Response) => {
+  const isActive = req.body.isActive !== undefined ? Boolean(req.body.isActive) : true;
+  const updated = await usersService.updateManagerStatus(
+    req.organizationId!,
+    req.params.id,
+    isActive
+  );
+  return sendSuccess(res, updated, 'Statut du gestionnaire mis à jour avec succès.');
+});

@@ -11,7 +11,8 @@ export const getAllContracts = asyncHandler(async (req: Request, res: Response) 
 
   const result = await contractsService.getAllContracts(
     req.organizationId!,
-    { ...queryParams, status, propertyId, tenantProfileId }
+    { ...queryParams, status, propertyId, tenantProfileId },
+    req.user
   );
   
   return sendPaginated(res, result.data, result.meta, 'Contrats de bail récupérés.');

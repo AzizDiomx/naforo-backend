@@ -20,6 +20,7 @@ export const CreatePropertySchema = z.object({
     depositAmount: z.number().nonnegative('Le dépôt de garantie ne peut pas être négatif.').default(0),
     photos: z.array(z.string().url()).default([]),
     amenities: z.array(z.string()).default([]),
+    managerId: z.string().uuid('Format d\'ID gérant invalide.').optional().nullable(),
   }),
 });
 
@@ -31,6 +32,7 @@ export const UpdatePropertySchema = z.object({
     city: z.string().optional(),
     country: z.string().optional(),
     parentId: z.string().uuid('Format d\'ID parent invalide.').optional().nullable(),
+    managerId: z.string().uuid('Format d\'ID gérant invalide.').optional().nullable(),
     floor: z.number().int().optional().nullable(),
     areaSqm: z.number().positive().optional().nullable(),
     rooms: z.number().int().positive().optional().nullable(),

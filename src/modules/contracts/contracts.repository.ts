@@ -6,24 +6,44 @@ import { generateContractNumber } from '@/shared/helpers/crypto';
 export class ContractsRepository {
   async findAll(
     organizationId: string,
-    options: PaginationQuery & { status?: string; propertyId?: string; tenantProfileId?: string }
+    options: PaginationQuery & { status?: string; propertyId?: string; tenantProfileId?: string },
+    user?: { role: string; userId: string }
   ): Promise<{ contracts: Contract[]; total: number }> {
     const { page, limit, search, sortBy, sortOrder, status, propertyId, tenantProfileId } = options;
     const skip = (page - 1) * limit;
 
+    const andConditions: Prisma.ContractWhereInput[] = [
+      { organizationId },
+    ];
+
+    if (status) andConditions.push({ status });
+    if (propertyId) andConditions.push({ propertyId });
+    if (tenantProfileId) andConditions.push({ tenantProfileId });
+
+    if (user && user.role === 'manager') {
+      andConditions.push({
+        property: {
+          OR: [
+            { managerId: user.userId },
+            { parent: { managerId: user.userId } },
+          ],
+        },
+      });
+    }
+
+    if (search) {
+      andConditions.push({
+        OR: [
+          { contractNumber: { contains: search, mode: 'insensitive' } },
+          { tenantProfile: { firstName: { contains: search, mode: 'insensitive' } } },
+          { tenantProfile: { lastName: { contains: search, mode: 'insensitive' } } },
+          { property: { name: { contains: search, mode: 'insensitive' } } },
+        ],
+      });
+    }
+
     const where: Prisma.ContractWhereInput = {
-      organizationId,
-      status: status || undefined,
-      propertyId: propertyId || undefined,
-      tenantProfileId: tenantProfileId || undefined,
-      OR: search
-        ? [
-            { contractNumber: { contains: search, mode: 'insensitive' } },
-            { tenantProfile: { firstName: { contains: search, mode: 'insensitive' } } },
-            { tenantProfile: { lastName: { contains: search, mode: 'insensitive' } } },
-            { property: { name: { contains: search, mode: 'insensitive' } } },
-          ]
-        : undefined,
+      AND: andConditions,
     };
 
     const [contracts, total] = await Promise.all([

@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS properties (
   photos          JSONB           DEFAULT '[]'::jsonb,
   amenities       JSONB           DEFAULT '[]'::jsonb,
   created_by      UUID            REFERENCES users(id),
+  manager_id      UUID            REFERENCES users(id) ON DELETE SET NULL,
   created_at      TIMESTAMPTZ     DEFAULT NOW(),
   updated_at      TIMESTAMPTZ     DEFAULT NOW()
 );

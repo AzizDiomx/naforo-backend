@@ -7,10 +7,12 @@ export const getAllProperties = asyncHandler(async (req: Request, res: Response)
   const queryParams = getPaginationParams(req);
   const type = req.query.type as string;
   const status = req.query.status as string;
+  const managerId = req.query.managerId as string;
 
   const result = await propertiesService.getAllProperties(
     req.organizationId!,
-    { ...queryParams, type, status }
+    { ...queryParams, type, status, managerId },
+    req.user
   );
   
   return sendPaginated(res, result.data, result.meta, 'Biens immobiliers récupérés avec succès.');
@@ -72,7 +74,7 @@ export const deleteProperty = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const getLots = asyncHandler(async (req: Request, res: Response) => {
-  const lots = await propertiesService.getLots(req.organizationId!);
+  const lots = await propertiesService.getLots(req.organizationId!, req.user);
   return sendSuccess(res, lots, 'Lots et ensembles immobiliers récupérés avec succès.');
 });
 

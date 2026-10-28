@@ -14,7 +14,8 @@ export const getAllIncidents = asyncHandler(async (req: Request, res: Response) 
 
   const result = await incidentsService.getAllIncidents(
     req.organizationId!,
-    { ...queryParams, status, type, priority, propertyId }
+    { ...queryParams, status, type, priority, propertyId },
+    req.user
   );
 
   return sendPaginated(res, result.data, result.meta, 'Signalements d\'incidents récupérés.');

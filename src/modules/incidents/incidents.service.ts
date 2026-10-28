@@ -15,9 +15,10 @@ import('@/modules/notifications/notifications.service').then((m) => {
 export class IncidentsService {
   async getAllIncidents(
     organizationId: string,
-    query: PaginationQuery & { status?: string; type?: string; priority?: string; propertyId?: string }
+    query: PaginationQuery & { status?: string; type?: string; priority?: string; propertyId?: string },
+    user?: { role: string; userId: string }
   ): Promise<{ data: Incident[]; meta: PaginationMeta }> {
-    const { incidents, total } = await incidentsRepository.findAll(organizationId, query);
+    const { incidents, total } = await incidentsRepository.findAll(organizationId, query, user);
     const meta = buildPaginationMeta(total, query.page, query.limit);
     return { data: incidents, meta };
   }

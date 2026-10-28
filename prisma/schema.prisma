@@ -63,6 +63,7 @@ model User {
   createdAt               DateTime                @default(now())
   updatedAt               DateTime                @updatedAt
   createdProperties       Property[]              @relation("PropertyCreator")
+  managedProperties       Property[]              @relation("PropertyManager")
   createdContracts        Contract[]              @relation("ContractCreator")
   ownedContracts          Contract[]              @relation("ContractOwner")
   declaredPayments        Payment[]               @relation("PaymentDeclarer")
@@ -106,6 +107,8 @@ model Property {
   amenities      Json?         @default("[]")
   createdBy      String?
   creator        User?         @relation("PropertyCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  managerId      String?
+  manager        User?         @relation("PropertyManager", fields: [managerId], references: [id], onDelete: SetNull)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   contracts      Contract[]

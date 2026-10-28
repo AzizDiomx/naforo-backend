@@ -26,3 +26,21 @@ export const UpdateFCMTokenSchema = z.object({
     fcmToken: z.string().min(1, 'Le token FCM est obligatoire.'),
   }),
 });
+
+export const CreateManagerSchema = z.object({
+  body: z.object({
+    firstName: z.string().min(2, 'Le prénom doit contenir au moins 2 caractères.'),
+    lastName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères.'),
+    email: z.string().email('Format d\'adresse email invalide.'),
+    phone: z.string().optional().nullable(),
+    password: z.string().min(6, 'Le mot de passe doit contenir au moins 6 caractères.').optional(),
+    role: z.enum(['manager', 'accountant', 'admin']).default('manager'),
+    propertyIds: z.array(z.string().uuid()).optional().default([]),
+  }),
+});
+
+export const UpdatePortfolioSchema = z.object({
+  body: z.object({
+    propertyIds: z.array(z.string().uuid('ID de bien immobilier invalide.')),
+  }),
+});

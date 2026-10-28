@@ -4,7 +4,7 @@ import { sendSuccess, asyncHandler } from '@/shared/helpers/response';
 import { ForbiddenError } from '@/shared/errors/AppError';
 
 export const getOwnerDashboard = asyncHandler(async (req: Request, res: Response) => {
-  const result = await dashboardService.getOwnerDashboard(req.organizationId!);
+  const result = await dashboardService.getOwnerDashboard(req.organizationId!, req.user);
   return sendSuccess(res, result, 'Données du tableau de bord propriétaire récupérées.');
 });
 

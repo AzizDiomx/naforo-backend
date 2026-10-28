@@ -8,9 +8,10 @@ import { buildPaginationMeta } from '@/shared/helpers/pagination';
 export class PropertiesService {
   async getAllProperties(
     organizationId: string,
-    query: PaginationQuery & { type?: string; status?: string }
+    query: PaginationQuery & { type?: string; status?: string; managerId?: string },
+    user?: { role: string; userId: string }
   ): Promise<{ data: Property[]; meta: PaginationMeta }> {
-    const { properties, total } = await propertiesRepository.findAll(organizationId, query);
+    const { properties, total } = await propertiesRepository.findAll(organizationId, query, user);
     const meta = buildPaginationMeta(total, query.page, query.limit);
     return { data: properties, meta };
   }
@@ -149,8 +150,8 @@ export class PropertiesService {
     await propertiesRepository.delete(id);
   }
 
-  async getLots(organizationId: string): Promise<any[]> {
-    return propertiesRepository.findLots(organizationId);
+  async getLots(organizationId: string, user?: { role: string; userId: string }): Promise<any[]> {
+    return propertiesRepository.findLots(organizationId, user);
   }
 
   async getAdvancedLotStatistics(organizationId: string, lotId?: string): Promise<any> {

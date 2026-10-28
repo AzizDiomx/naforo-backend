@@ -6,25 +6,45 @@ import { generateReference } from '@/shared/helpers/crypto';
 export class IncidentsRepository {
   async findAll(
     organizationId: string,
-    options: PaginationQuery & { status?: string; type?: string; priority?: string; propertyId?: string }
+    options: PaginationQuery & { status?: string; type?: string; priority?: string; propertyId?: string },
+    user?: { role: string; userId: string }
   ): Promise<{ incidents: Incident[]; total: number }> {
     const { page, limit, search, sortBy, sortOrder, status, type, priority, propertyId } = options;
     const skip = (page - 1) * limit;
 
+    const andConditions: Prisma.IncidentWhereInput[] = [
+      { organizationId },
+    ];
+
+    if (status) andConditions.push({ status });
+    if (type) andConditions.push({ type });
+    if (priority) andConditions.push({ priority });
+    if (propertyId) andConditions.push({ propertyId });
+
+    if (user && user.role === 'manager') {
+      andConditions.push({
+        property: {
+          OR: [
+            { managerId: user.userId },
+            { parent: { managerId: user.userId } },
+          ],
+        },
+      });
+    }
+
+    if (search) {
+      andConditions.push({
+        OR: [
+          { incidentNumber: { contains: search, mode: 'insensitive' } },
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+          { property: { name: { contains: search, mode: 'insensitive' } } },
+        ],
+      });
+    }
+
     const where: Prisma.IncidentWhereInput = {
-      organizationId,
-      status: status || undefined,
-      type: type || undefined,
-      priority: priority || undefined,
-      propertyId: propertyId || undefined,
-      OR: search
-        ? [
-            { incidentNumber: { contains: search, mode: 'insensitive' } },
-            { title: { contains: search, mode: 'insensitive' } },
-            { description: { contains: search, mode: 'insensitive' } },
-            { property: { name: { contains: search, mode: 'insensitive' } } },
-          ]
-        : undefined,
+      AND: andConditions,
     };
 
     const [incidents, total] = await Promise.all([

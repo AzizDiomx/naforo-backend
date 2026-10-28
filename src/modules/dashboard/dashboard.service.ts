@@ -1,17 +1,91 @@
 import { prisma } from '@/config/database';
 import { NotFoundError } from '@/shared/errors/AppError';
+import { Prisma } from '@prisma/client';
 
 export class DashboardService {
   /**
    * Fetch full dashboard stats for an organization manager/owner
    */
-  async getOwnerDashboard(organizationId: string): Promise<any> {
+  async getOwnerDashboard(organizationId: string, user?: { role: string; userId: string }): Promise<any> {
     const today = new Date();
     const currentMonth = today.getMonth() + 1;
     const currentYear = today.getFullYear();
 
     const limitDate = new Date();
     limitDate.setDate(limitDate.getDate() + 30); // 30 days from now
+
+    const isManager = user?.role === 'manager';
+    const propBaseWhere: Prisma.PropertyWhereInput = {
+      organizationId,
+      ...(isManager
+        ? {
+            OR: [
+              { managerId: user!.userId },
+              { parent: { managerId: user!.userId } },
+            ],
+          }
+        : {}),
+    };
+
+    const contractBaseWhere: Prisma.ContractWhereInput = {
+      organizationId,
+      ...(isManager
+        ? {
+            property: {
+              OR: [
+                { managerId: user!.userId },
+                { parent: { managerId: user!.userId } },
+              ],
+            },
+          }
+        : {}),
+    };
+
+    const invoiceBaseWhere: Prisma.InvoiceWhereInput = {
+      organizationId,
+      ...(isManager
+        ? {
+            contract: {
+              property: {
+                OR: [
+                  { managerId: user!.userId },
+                  { parent: { managerId: user!.userId } },
+                ],
+              },
+            },
+          }
+        : {}),
+    };
+
+    const paymentBaseWhere: Prisma.PaymentWhereInput = {
+      organizationId,
+      ...(isManager
+        ? {
+            contract: {
+              property: {
+                OR: [
+                  { managerId: user!.userId },
+                  { parent: { managerId: user!.userId } },
+                ],
+              },
+            },
+          }
+        : {}),
+    };
+
+    const incidentBaseWhere: Prisma.IncidentWhereInput = {
+      organizationId,
+      ...(isManager
+        ? {
+            property: {
+              OR: [
+                { managerId: user!.userId },
+                { parent: { managerId: user!.userId } },
+              ],
+            },
+          }
+        : {}),
+    };
 
     // Execute queries in parallel
     const [
@@ -27,19 +101,19 @@ export class DashboardService {
       // 1. Properties status breakdown
       prisma.property.groupBy({
         by: ['status'],
-        where: { organizationId },
+        where: propBaseWhere,
         _count: { id: true },
       }),
       // 2. Contracts status breakdown
       prisma.contract.groupBy({
         by: ['status'],
-        where: { organizationId },
+        where: contractBaseWhere,
         _count: { id: true },
       }),
       // 3. Contracts expiring in next 30 days
       prisma.contract.findMany({
         where: {
-          organizationId,
+          ...contractBaseWhere,
           status: 'active',
           endDate: { gte: new Date(), lte: limitDate },
         },
@@ -48,20 +122,20 @@ export class DashboardService {
       // 4. Invoices sum grouped by status
       prisma.invoice.groupBy({
         by: ['status'],
-        where: { organizationId },
+        where: invoiceBaseWhere,
         _sum: { totalAmount: true },
         _count: { id: true },
       }),
       // 5. Recent 5 declared payments
       prisma.payment.findMany({
-        where: { organizationId },
+        where: paymentBaseWhere,
         take: 5,
         orderBy: { createdAt: 'desc' },
         include: { tenantProfile: { select: { firstName: true, lastName: true } } },
       }),
       // 6. Recent 5 incidents
       prisma.incident.findMany({
-        where: { organizationId },
+        where: incidentBaseWhere,
         take: 5,
         orderBy: { createdAt: 'desc' },
         include: { property: { select: { name: true } } },
@@ -69,7 +143,7 @@ export class DashboardService {
       // 7. This month validated revenue
       prisma.payment.aggregate({
         where: {
-          organizationId,
+          ...paymentBaseWhere,
           status: 'validated',
           paymentDate: {
             gte: new Date(currentYear, currentMonth - 1, 1),
@@ -81,7 +155,7 @@ export class DashboardService {
       // 8. Last month validated revenue
       prisma.payment.aggregate({
         where: {
-          organizationId,
+          ...paymentBaseWhere,
           status: 'validated',
           paymentDate: {
             gte: new Date(currentMonth === 1 ? currentYear - 1 : currentYear, currentMonth === 1 ? 11 : currentMonth - 2, 1),

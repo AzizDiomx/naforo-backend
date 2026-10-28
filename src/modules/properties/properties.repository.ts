@@ -5,22 +5,48 @@ import { PaginationQuery } from '@/shared/types';
 export class PropertiesRepository {
   async findAll(
     organizationId: string,
-    options: PaginationQuery & { type?: string; status?: string }
+    options: PaginationQuery & { type?: string; status?: string; managerId?: string },
+    user?: { role: string; userId: string }
   ): Promise<{ properties: Property[]; total: number }> {
-    const { page, limit, search, sortBy, sortOrder, type, status } = options;
+    const { page, limit, search, sortBy, sortOrder, type, status, managerId } = options;
     const skip = (page - 1) * limit;
 
+    const andConditions: Prisma.PropertyWhereInput[] = [
+      { organizationId },
+    ];
+
+    if (type) andConditions.push({ type });
+    if (status) andConditions.push({ status });
+
+    // Scoping for manager role or explicit filter by admin
+    if (user && user.role === 'manager') {
+      andConditions.push({
+        OR: [
+          { managerId: user.userId },
+          { parent: { managerId: user.userId } },
+        ],
+      });
+    } else if (managerId) {
+      andConditions.push({
+        OR: [
+          { managerId },
+          { parent: { managerId } },
+        ],
+      });
+    }
+
+    if (search) {
+      andConditions.push({
+        OR: [
+          { name: { contains: search, mode: 'insensitive' } },
+          { address: { contains: search, mode: 'insensitive' } },
+          { city: { contains: search, mode: 'insensitive' } },
+        ],
+      });
+    }
+
     const where: Prisma.PropertyWhereInput = {
-      organizationId,
-      type: type || undefined,
-      status: status || undefined,
-      OR: search
-        ? [
-            { name: { contains: search, mode: 'insensitive' } },
-            { address: { contains: search, mode: 'insensitive' } },
-            { city: { contains: search, mode: 'insensitive' } },
-          ]
-        : undefined,
+      AND: andConditions,
     };
 
     const [properties, total] = await Promise.all([
@@ -30,7 +56,8 @@ export class PropertiesRepository {
         take: limit,
         orderBy: { [sortBy || 'createdAt']: (sortOrder || 'ASC').toLowerCase() as 'asc' | 'desc' },
         include: {
-          parent: { select: { name: true } },
+          parent: { select: { id: true, name: true, type: true } },
+          manager: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
         },
       }),
       prisma.property.count({ where }),
@@ -43,6 +70,16 @@ export class PropertiesRepository {
     return prisma.property.findFirst({
       where: { id, organizationId },
       include: {
+        manager: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            role: true,
+          },
+        },
         parent: {
           select: {
             id: true,
@@ -50,10 +87,27 @@ export class PropertiesRepository {
             type: true,
             address: true,
             city: true,
+            manager: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phone: true,
+              },
+            },
           },
         },
         children: {
           include: {
+            manager: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
             contracts: {
               where: { status: 'active' },
               include: { tenantProfile: true },
@@ -95,17 +149,31 @@ export class PropertiesRepository {
     });
   }
 
-  async findLots(organizationId: string): Promise<any[]> {
-    return prisma.property.findMany({
-      where: {
-        organizationId,
+  async findLots(organizationId: string, user?: { role: string; userId: string }): Promise<any[]> {
+    const andConditions: Prisma.PropertyWhereInput[] = [
+      { organizationId },
+      {
         OR: [
           { type: { in: ['building', 'residence', 'villa', 'lot'] } },
           { children: { some: {} } },
           { parentId: null },
         ],
       },
+    ];
+
+    if (user && user.role === 'manager') {
+      andConditions.push({
+        OR: [
+          { managerId: user.userId },
+          { children: { some: { managerId: user.userId } } },
+        ],
+      });
+    }
+
+    return prisma.property.findMany({
+      where: { AND: andConditions },
       include: {
+        manager: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
         _count: {
           select: { children: true },
         },
@@ -119,6 +187,8 @@ export class PropertiesRepository {
             status: true,
             rentAmount: true,
             chargesAmount: true,
+            managerId: true,
+            manager: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
             contracts: {
               where: { status: 'active' },
               select: {
