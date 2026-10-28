@@ -71,6 +71,17 @@ export const deleteProperty = asyncHandler(async (req: Request, res: Response) =
   return sendSuccess(res, null, 'Bien immobilier supprimé avec succès.');
 });
 
+export const getLots = asyncHandler(async (req: Request, res: Response) => {
+  const lots = await propertiesService.getLots(req.organizationId!);
+  return sendSuccess(res, lots, 'Lots et ensembles immobiliers récupérés avec succès.');
+});
+
+export const getAdvancedLotStatistics = asyncHandler(async (req: Request, res: Response) => {
+  const lotId = req.query.lotId as string | undefined;
+  const stats = await propertiesService.getAdvancedLotStatistics(req.organizationId!, lotId);
+  return sendSuccess(res, stats, 'Statistiques avancées par lot et appartement récupérées.');
+});
+
 export const getStats = asyncHandler(async (req: Request, res: Response) => {
   const stats = await propertiesService.getStats(req.organizationId!);
   return sendSuccess(res, stats, 'Statistiques de biens récupérées.');

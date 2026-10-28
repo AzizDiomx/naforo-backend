@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const CreatePropertySchema = z.object({
   body: z.object({
     name: z.string({ required_error: 'Le nom du bien est obligatoire.' }).min(2, 'Le nom du bien doit contenir au moins 2 caractères.'),
-    type: z.enum(['building', 'residence', 'villa', 'apartment', 'shop', 'office', 'parking'], {
+    type: z.enum(['building', 'residence', 'villa', 'apartment', 'shop', 'office', 'parking', 'lot'], {
       errorMap: () => ({ message: 'Veuillez sélectionner un type de bien valide.' }),
     }),
     address: z.string({ required_error: "L'adresse physique est obligatoire." }).min(3, "L'adresse physique doit contenir au moins 3 caractères."),
@@ -26,7 +26,7 @@ export const CreatePropertySchema = z.object({
 export const UpdatePropertySchema = z.object({
   body: z.object({
     name: z.string().min(2, 'Le nom du bien doit contenir au moins 2 caractères.').optional(),
-    type: z.enum(['building', 'residence', 'villa', 'apartment', 'shop', 'office', 'parking']).optional(),
+    type: z.enum(['building', 'residence', 'villa', 'apartment', 'shop', 'office', 'parking', 'lot']).optional(),
     address: z.string().min(3, 'L\'adresse physique est obligatoire.').optional(),
     city: z.string().optional(),
     country: z.string().optional(),

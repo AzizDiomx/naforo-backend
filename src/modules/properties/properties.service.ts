@@ -149,6 +149,14 @@ export class PropertiesService {
     await propertiesRepository.delete(id);
   }
 
+  async getLots(organizationId: string): Promise<any[]> {
+    return propertiesRepository.findLots(organizationId);
+  }
+
+  async getAdvancedLotStatistics(organizationId: string, lotId?: string): Promise<any> {
+    return propertiesRepository.getAdvancedLotStatistics(organizationId, lotId);
+  }
+
   async getStats(organizationId: string): Promise<any> {
     return propertiesRepository.getStats(organizationId);
   }

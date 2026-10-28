@@ -39,18 +39,353 @@ export class PropertiesRepository {
     return { properties, total };
   }
 
-  async findById(id: string, organizationId: string): Promise<Property | null> {
+  async findById(id: string, organizationId: string): Promise<any | null> {
     return prisma.property.findFirst({
       where: { id, organizationId },
       include: {
-        children: true,
-        parent: true,
+        parent: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            address: true,
+            city: true,
+          },
+        },
+        children: {
+          include: {
+            contracts: {
+              where: { status: 'active' },
+              include: { tenantProfile: true },
+            },
+            incidents: {
+              where: { status: { in: ['open', 'in_progress'] } },
+            },
+          },
+          orderBy: [{ floor: 'asc' }, { name: 'asc' }],
+        },
         contracts: {
-          where: { status: 'active' },
-          include: { tenantProfile: true },
+          orderBy: { startDate: 'desc' },
+          include: {
+            tenantProfile: true,
+            invoices: {
+              select: { id: true, invoiceNumber: true, totalAmount: true, status: true, periodMonth: true, periodYear: true, dueDate: true },
+              take: 12,
+              orderBy: { createdAt: 'desc' },
+            },
+            receipts: {
+              select: { id: true, receiptNumber: true, amount: true, issuedAt: true, pdfUrl: true },
+              take: 12,
+              orderBy: { issuedAt: 'desc' },
+            },
+          },
+        },
+        incidents: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            tenantProfile: {
+              select: { id: true, firstName: true, lastName: true, phone: true, avatarUrl: true },
+            },
+            assignee: {
+              select: { id: true, firstName: true, lastName: true },
+            },
+          },
         },
       },
     });
+  }
+
+  async findLots(organizationId: string): Promise<any[]> {
+    return prisma.property.findMany({
+      where: {
+        organizationId,
+        OR: [
+          { type: { in: ['building', 'residence', 'villa', 'lot'] } },
+          { children: { some: {} } },
+          { parentId: null },
+        ],
+      },
+      include: {
+        _count: {
+          select: { children: true },
+        },
+        children: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            floor: true,
+            areaSqm: true,
+            status: true,
+            rentAmount: true,
+            chargesAmount: true,
+            contracts: {
+              where: { status: 'active' },
+              select: {
+                id: true,
+                contractNumber: true,
+                tenantProfile: {
+                  select: { id: true, firstName: true, lastName: true, phone: true },
+                },
+              },
+            },
+            incidents: {
+              where: { status: { in: ['open', 'in_progress'] } },
+              select: { id: true, title: true, priority: true, status: true },
+            },
+          },
+          orderBy: [{ floor: 'asc' }, { name: 'asc' }],
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async getAdvancedLotStatistics(organizationId: string, lotId?: string): Promise<any> {
+    const today = new Date();
+    const currentMonth = today.getMonth() + 1;
+    const currentYear = today.getFullYear();
+
+    const lotWhere: Prisma.PropertyWhereInput = {
+      organizationId,
+      ...(lotId ? { id: lotId } : {
+        OR: [
+          { type: { in: ['building', 'residence', 'villa', 'lot'] } },
+          { children: { some: {} } },
+          { parentId: null },
+        ],
+      }),
+    };
+
+    const lots = await prisma.property.findMany({
+      where: lotWhere,
+      include: {
+        children: {
+          include: {
+            contracts: {
+              where: { status: 'active' },
+              include: {
+                tenantProfile: {
+                  select: { id: true, firstName: true, lastName: true, phone: true, email: true, reliabilityScore: true },
+                },
+                invoices: {
+                  where: { periodMonth: currentMonth, periodYear: currentYear },
+                  select: { id: true, status: true, totalAmount: true },
+                },
+              },
+            },
+            incidents: {
+              orderBy: { createdAt: 'desc' },
+              select: {
+                id: true,
+                title: true,
+                type: true,
+                status: true,
+                priority: true,
+                createdAt: true,
+              },
+            },
+          },
+          orderBy: [{ floor: 'asc' }, { name: 'asc' }],
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    const standaloneProperties = !lotId ? await prisma.property.findMany({
+      where: {
+        organizationId,
+        parentId: null,
+        children: { none: {} },
+        type: { notIn: ['building', 'residence', 'lot'] },
+      },
+      include: {
+        contracts: {
+          where: { status: 'active' },
+          include: {
+            tenantProfile: {
+              select: { id: true, firstName: true, lastName: true, phone: true, email: true, reliabilityScore: true },
+            },
+            invoices: {
+              where: { periodMonth: currentMonth, periodYear: currentYear },
+              select: { id: true, status: true, totalAmount: true },
+            },
+          },
+        },
+        incidents: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            title: true,
+            type: true,
+            status: true,
+            priority: true,
+            createdAt: true,
+          },
+        },
+      },
+    }) : [];
+
+    const lotsMetrics = lots.map((lot) => {
+      const units = lot.children.map((unit) => {
+        const activeContract = unit.contracts[0] || null;
+        const currentInvoice = activeContract?.invoices[0] || null;
+        const isCurrentMonthPaid = currentInvoice ? currentInvoice.status === 'paid' : (unit.status !== 'occupied');
+        const openIncidents = unit.incidents.filter((i) => i.status === 'open' || i.status === 'in_progress');
+
+        return {
+          id: unit.id,
+          name: unit.name,
+          type: unit.type,
+          floor: unit.floor,
+          areaSqm: unit.areaSqm ? Number(unit.areaSqm) : null,
+          rooms: unit.rooms,
+          status: unit.status,
+          rentAmount: unit.rentAmount ? Number(unit.rentAmount) : 0,
+          chargesAmount: unit.chargesAmount ? Number(unit.chargesAmount) : 0,
+          totalMonthly: Number(unit.rentAmount || 0) + Number(unit.chargesAmount || 0),
+          currentTenant: activeContract ? activeContract.tenantProfile : null,
+          contractId: activeContract?.id || null,
+          contractStatus: activeContract?.status || null,
+          currentInvoiceStatus: currentInvoice?.status || (activeContract ? 'pending' : 'none'),
+          isCurrentMonthPaid,
+          openIncidentsCount: openIncidents.length,
+          totalIncidentsCount: unit.incidents.length,
+          recentIncidents: unit.incidents.slice(0, 3),
+        };
+      });
+
+      const totalUnits = units.length;
+      const occupiedUnits = units.filter((u) => u.status === 'occupied').length;
+      const availableUnits = units.filter((u) => u.status === 'available').length;
+      const maintenanceUnits = units.filter((u) => u.status === 'maintenance').length;
+      const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 1000) / 10 : 0;
+
+      const totalTheoreticalRent = units.reduce((sum, u) => sum + u.totalMonthly, 0);
+      const totalOccupiedRent = units.filter((u) => u.status === 'occupied').reduce((sum, u) => sum + u.totalMonthly, 0);
+      const paidUnits = units.filter((u) => u.status === 'occupied' && u.isCurrentMonthPaid);
+      const totalCollectedThisMonth = paidUnits.reduce((sum, u) => sum + u.totalMonthly, 0);
+      const totalOverdueThisMonth = totalOccupiedRent - totalCollectedThisMonth;
+      const collectionRate = totalOccupiedRent > 0 ? Math.round((totalCollectedThisMonth / totalOccupiedRent) * 1000) / 10 : 100;
+
+      const totalActiveIncidents = units.reduce((sum, u) => sum + u.openIncidentsCount, 0);
+      const totalIncidents = units.reduce((sum, u) => sum + u.totalIncidentsCount, 0);
+
+      return {
+        id: lot.id,
+        name: lot.name,
+        type: lot.type,
+        address: lot.address,
+        city: lot.city,
+        totalUnits,
+        occupiedUnits,
+        availableUnits,
+        maintenanceUnits,
+        occupancyRate,
+        totalTheoreticalRent,
+        totalOccupiedRent,
+        totalCollectedThisMonth,
+        totalOverdueThisMonth,
+        collectionRate,
+        totalActiveIncidents,
+        totalIncidents,
+        units,
+      };
+    });
+
+    if (standaloneProperties.length > 0) {
+      const standaloneUnits = standaloneProperties.map((unit) => {
+        const activeContract = unit.contracts[0] || null;
+        const currentInvoice = activeContract?.invoices[0] || null;
+        const isCurrentMonthPaid = currentInvoice ? currentInvoice.status === 'paid' : (unit.status !== 'occupied');
+        const openIncidents = unit.incidents.filter((i) => i.status === 'open' || i.status === 'in_progress');
+
+        return {
+          id: unit.id,
+          name: unit.name,
+          type: unit.type,
+          floor: unit.floor,
+          areaSqm: unit.areaSqm ? Number(unit.areaSqm) : null,
+          rooms: unit.rooms,
+          status: unit.status,
+          rentAmount: unit.rentAmount ? Number(unit.rentAmount) : 0,
+          chargesAmount: unit.chargesAmount ? Number(unit.chargesAmount) : 0,
+          totalMonthly: Number(unit.rentAmount || 0) + Number(unit.chargesAmount || 0),
+          currentTenant: activeContract ? activeContract.tenantProfile : null,
+          contractId: activeContract?.id || null,
+          contractStatus: activeContract?.status || null,
+          currentInvoiceStatus: currentInvoice?.status || (activeContract ? 'pending' : 'none'),
+          isCurrentMonthPaid,
+          openIncidentsCount: openIncidents.length,
+          totalIncidentsCount: unit.incidents.length,
+          recentIncidents: unit.incidents.slice(0, 3),
+        };
+      });
+
+      const totalUnits = standaloneUnits.length;
+      const occupiedUnits = standaloneUnits.filter((u) => u.status === 'occupied').length;
+      const availableUnits = standaloneUnits.filter((u) => u.status === 'available').length;
+      const maintenanceUnits = standaloneUnits.filter((u) => u.status === 'maintenance').length;
+      const occupancyRate = totalUnits > 0 ? Math.round((occupiedUnits / totalUnits) * 1000) / 10 : 0;
+      const totalTheoreticalRent = standaloneUnits.reduce((sum, u) => sum + u.totalMonthly, 0);
+      const totalOccupiedRent = standaloneUnits.filter((u) => u.status === 'occupied').reduce((sum, u) => sum + u.totalMonthly, 0);
+      const paidUnits = standaloneUnits.filter((u) => u.status === 'occupied' && u.isCurrentMonthPaid);
+      const totalCollectedThisMonth = paidUnits.reduce((sum, u) => sum + u.totalMonthly, 0);
+      const totalOverdueThisMonth = totalOccupiedRent - totalCollectedThisMonth;
+      const collectionRate = totalOccupiedRent > 0 ? Math.round((totalCollectedThisMonth / totalOccupiedRent) * 1000) / 10 : 100;
+
+      lotsMetrics.push({
+        id: 'standalone',
+        name: 'Biens Individuels (Hors Lots)',
+        type: 'individual',
+        address: 'Diverses adresses',
+        city: 'Toutes villes',
+        totalUnits,
+        occupiedUnits,
+        availableUnits,
+        maintenanceUnits,
+        occupancyRate,
+        totalTheoreticalRent,
+        totalOccupiedRent,
+        totalCollectedThisMonth,
+        totalOverdueThisMonth,
+        collectionRate,
+        totalActiveIncidents: standaloneUnits.reduce((sum, u) => sum + u.openIncidentsCount, 0),
+        totalIncidents: standaloneUnits.reduce((sum, u) => sum + u.totalIncidentsCount, 0),
+        units: standaloneUnits,
+      });
+    }
+
+    const globalTotalUnits = lotsMetrics.reduce((sum, l) => sum + l.totalUnits, 0);
+    const globalOccupiedUnits = lotsMetrics.reduce((sum, l) => sum + l.occupiedUnits, 0);
+    const globalAvailableUnits = lotsMetrics.reduce((sum, l) => sum + l.availableUnits, 0);
+    const globalMaintenanceUnits = lotsMetrics.reduce((sum, l) => sum + l.maintenanceUnits, 0);
+    const globalOccupancyRate = globalTotalUnits > 0 ? Math.round((globalOccupiedUnits / globalTotalUnits) * 1000) / 10 : 0;
+    const globalTheoreticalRent = lotsMetrics.reduce((sum, l) => sum + l.totalTheoreticalRent, 0);
+    const globalOccupiedRent = lotsMetrics.reduce((sum, l) => sum + l.totalOccupiedRent, 0);
+    const globalCollectedThisMonth = lotsMetrics.reduce((sum, l) => sum + l.totalCollectedThisMonth, 0);
+    const globalOverdueThisMonth = lotsMetrics.reduce((sum, l) => sum + l.totalOverdueThisMonth, 0);
+    const globalCollectionRate = globalOccupiedRent > 0 ? Math.round((globalCollectedThisMonth / globalOccupiedRent) * 1000) / 10 : 100;
+    const globalActiveIncidents = lotsMetrics.reduce((sum, l) => sum + l.totalActiveIncidents, 0);
+
+    return {
+      period: { month: currentMonth, year: currentYear },
+      global: {
+        totalLots: lots.length,
+        totalUnits: globalTotalUnits,
+        occupiedUnits: globalOccupiedUnits,
+        availableUnits: globalAvailableUnits,
+        maintenanceUnits: globalMaintenanceUnits,
+        occupancyRate: globalOccupancyRate,
+        theoreticalMonthlyRent: globalTheoreticalRent,
+        occupiedMonthlyRent: globalOccupiedRent,
+        collectedThisMonth: globalCollectedThisMonth,
+        overdueThisMonth: globalOverdueThisMonth,
+        collectionRate: globalCollectionRate,
+        activeIncidentsCount: globalActiveIncidents,
+      },
+      lots: lotsMetrics,
+    };
   }
 
   async findAvailable(organizationId: string): Promise<Property[]> {

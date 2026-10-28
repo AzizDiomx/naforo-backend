@@ -39,6 +39,18 @@ router.get(
 );
 
 router.get(
+  '/lots', 
+  authorize('admin', 'manager', 'owner'), 
+  propertiesController.getLots
+);
+
+router.get(
+  '/statistics/advanced', 
+  authorize('admin', 'manager', 'owner'), 
+  propertiesController.getAdvancedLotStatistics
+);
+
+router.get(
   '/:id', 
   authorize('admin', 'manager', 'owner', 'tenant'), 
   propertiesController.getPropertyById
