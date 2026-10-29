@@ -142,3 +142,33 @@ export const getStats = asyncHandler(async (req: Request, res: Response) => {
   const stats = await incidentsService.getStats(req.organizationId!);
   return sendSuccess(res, stats, 'Statistiques des incidents récupérées.');
 });
+
+export const submitQuote = asyncHandler(async (req: Request, res: Response) => {
+  const incident = await incidentsService.submitQuote(
+    req.params.id,
+    req.organizationId!,
+    req.body
+  );
+  return sendSuccess(res, incident, 'Devis de travaux soumis pour approbation.');
+});
+
+export const approveExpense = asyncHandler(async (req: Request, res: Response) => {
+  const incident = await incidentsService.approveExpense(
+    req.params.id,
+    req.organizationId!,
+    req.user!.userId,
+    req.body
+  );
+  const msg = req.body.approved ? 'Dépense de travaux approuvée avec succès.' : 'Dépense de travaux rejetée.';
+  return sendSuccess(res, incident, msg);
+});
+
+export const payExpense = asyncHandler(async (req: Request, res: Response) => {
+  const incident = await incidentsService.payExpense(
+    req.params.id,
+    req.organizationId!,
+    req.user!.userId,
+    req.body
+  );
+  return sendSuccess(res, incident, 'Dépense de travaux marquée comme payée.');
+});

@@ -276,6 +276,109 @@ export class TenantProfilesService {
 
     await tenantProfilesRepository.softDelete(id);
   }
+
+  async calculateRiskScoring(tenantProfileId: string, organizationId?: string): Promise<any> {
+    const profile = await prisma.tenantProfile.findUnique({
+      where: { id: tenantProfileId },
+      include: {
+        contracts: {
+          where: { status: 'active' },
+          select: { id: true, rentAmount: true },
+        },
+        invoices: {
+          take: 12,
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, status: true, dueDate: true, totalAmount: true, periodMonth: true, periodYear: true },
+        },
+        payments: {
+          take: 12,
+          orderBy: { paymentDate: 'desc' },
+          select: { id: true, status: true, amount: true, paymentDate: true },
+        },
+      },
+    });
+
+    if (!profile) throw new NotFoundError('Profil locataire introuvable.');
+
+    const riskFactors: string[] = [];
+    let defaultProb = 5;
+
+    // 1. Overdue invoices check
+    const overdueInvoices = profile.invoices.filter((i) => i.status === 'overdue');
+    if (overdueInvoices.length > 0) {
+      defaultProb += overdueInvoices.length * 25;
+      riskFactors.push(`${overdueInvoices.length} facture(s) actuellement en impayé`);
+    }
+
+    // 2. Pending invoices past due date
+    const now = new Date();
+    const lateInvoices = profile.invoices.filter((i) => i.status === 'pending' && new Date(i.dueDate) < now);
+    if (lateInvoices.length > 0) {
+      defaultProb += lateInvoices.length * 15;
+      riskFactors.push(`${lateInvoices.length} échéance(s) en retard de règlement`);
+    }
+
+    // 3. Rent-to-income effort ratio check
+    const activeContract = profile.contracts[0];
+    const rentAmount = activeContract ? Number(activeContract.rentAmount || 0) : 0;
+    const monthlyIncome = profile.monthlyIncome ? Number(profile.monthlyIncome) : 0;
+
+    if (monthlyIncome > 0 && rentAmount > 0) {
+      const effortRatio = Math.round((rentAmount / monthlyIncome) * 100);
+      if (effortRatio > 40) {
+        defaultProb += 20;
+        riskFactors.push(`Taux d'effort locatif excessif (${effortRatio}% des revenus déclarés)`);
+      } else if (effortRatio > 33) {
+        defaultProb += 10;
+        riskFactors.push(`Taux d'effort locatif élevé (${effortRatio}% des revenus déclarés)`);
+      }
+    }
+
+    // 4. Incident history / damages
+    const openIncidents = await prisma.incident.count({
+      where: {
+        tenantProfileId,
+        status: { in: ['open', 'in_progress'] },
+      },
+    });
+    if (openIncidents >= 2) {
+      defaultProb += 10;
+      riskFactors.push(`${openIncidents} signalements techniques ou dégradations non résolus`);
+    }
+
+    // 5. Positive factors (Bonus for regular payments)
+    const paidInvoices = profile.invoices.filter((i) => i.status === 'paid');
+    if (paidInvoices.length >= 6 && overdueInvoices.length === 0) {
+      defaultProb = Math.max(2, defaultProb - 15);
+      riskFactors.push('Historique exemplaire : 6+ mois de loyers consécutifs réglés');
+    }
+
+    const predictedDefaultProbability = Math.max(2, Math.min(95, defaultProb));
+
+    let riskLevel = 'low';
+    if (predictedDefaultProbability >= 65) riskLevel = 'critical';
+    else if (predictedDefaultProbability >= 40) riskLevel = 'high';
+    else if (predictedDefaultProbability >= 20) riskLevel = 'medium';
+
+    const updated = await prisma.tenantProfile.update({
+      where: { id: tenantProfileId },
+      data: {
+        riskLevel,
+        predictedDefaultProbability,
+        riskFactors,
+        lastScoringDate: new Date(),
+      },
+    });
+
+    return {
+      tenantProfileId,
+      reliabilityScore: updated.reliabilityScore,
+      riskLevel,
+      predictedDefaultProbability,
+      riskFactors,
+      lastScoringDate: updated.lastScoringDate,
+    };
+  }
 }
 
 export const tenantProfilesService = new TenantProfilesService();

@@ -6,7 +6,14 @@ import { authorize } from '@/shared/middlewares/rbac.middleware';
 import { requireTenant } from '@/shared/middlewares/tenant.middleware';
 import { uploadMultiple } from '@/shared/middlewares/upload.middleware';
 import { auditLog } from '@/shared/middlewares/audit.middleware';
-import { CreateIncidentSchema, UpdateIncidentSchema, ResolveIncidentSchema } from './incidents.schema';
+import { 
+  CreateIncidentSchema, 
+  UpdateIncidentSchema, 
+  ResolveIncidentSchema,
+  SubmitQuoteSchema,
+  ApproveExpenseSchema,
+  PayExpenseSchema
+} from './incidents.schema';
 
 const router = Router();
 
@@ -23,6 +30,30 @@ router.get(
   '/stats', 
   authorize('admin', 'manager', 'owner'), 
   incidentsController.getStats
+);
+
+router.post(
+  '/:id/quote',
+  authorize('admin', 'manager', 'owner', 'technician'),
+  validate(SubmitQuoteSchema),
+  auditLog('SUBMIT_INCIDENT_QUOTE', 'Incident'),
+  incidentsController.submitQuote
+);
+
+router.post(
+  '/:id/approve-expense',
+  authorize('admin', 'owner'),
+  validate(ApproveExpenseSchema),
+  auditLog('APPROVE_INCIDENT_EXPENSE', 'Incident'),
+  incidentsController.approveExpense
+);
+
+router.post(
+  '/:id/pay-expense',
+  authorize('admin', 'owner', 'accountant'),
+  validate(PayExpenseSchema),
+  auditLog('PAY_INCIDENT_EXPENSE', 'Incident'),
+  incidentsController.payExpense
 );
 
 router.get(

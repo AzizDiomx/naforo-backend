@@ -39,6 +39,8 @@ model Organization {
   subscriptions          Subscription[]
   subscriptionPayments   SubscriptionPayment[]
   chatThreads            ChatThread[]
+  landlords              Landlord[]
+  managementReports      ManagementReport[]
 
   @@map("organizations")
 }
@@ -77,6 +79,8 @@ model User {
   tenantProfile              TenantProfile?
   preferredCurrency          String                  @default("XOF") // XOF | EUR | USD | CAD
   accountingEntries          AccountingTransaction[]  @relation("AccountingCreator")
+  createdReports             ManagementReport[]       @relation("ReportCreator")
+  approvedIncidents          Incident[]               @relation("IncidentApprover")
 
   @@map("users")
 }
@@ -109,6 +113,8 @@ model Property {
   creator        User?         @relation("PropertyCreator", fields: [createdBy], references: [id], onDelete: SetNull)
   managerId      String?
   manager        User?         @relation("PropertyManager", fields: [managerId], references: [id], onDelete: SetNull)
+  landlordId     String?
+  landlord       Landlord?     @relation("LandlordProperties", fields: [landlordId], references: [id], onDelete: SetNull)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   contracts      Contract[]
@@ -140,6 +146,10 @@ model TenantProfile {
   emergencyContactName  String?
   emergencyContactPhone String?
   reliabilityScore      Int           @default(100)
+  riskLevel             String        @default("low") // 'low', 'medium', 'high', 'critical'
+  predictedDefaultProbability Int       @default(5) // Probability in % (0 - 100)
+  riskFactors           Json?         @default("[]") // Array of explanatory risk factors
+  lastScoringDate       DateTime?
   avatarUrl             String?
   notes                 String?
   isActive              Boolean       @default(true)
@@ -325,6 +335,16 @@ model Incident {
   photos          Json?         @default("[]")
   status          String        @default("open") // 'open','in_progress','resolved','closed'
   priority        String        @default("medium") // 'low','medium','high','urgent'
+  estimatedCost   Decimal?      @db.Decimal(15, 2)
+  actualCost      Decimal?      @db.Decimal(15, 2)
+  quoteUrl        String?
+  invoiceUrl      String?
+  expenseStatus   String?       @default("none") // 'none','quote_submitted','pending_approval','approved','rejected','paid'
+  approvedBy      String?
+  approver        User?         @relation("IncidentApprover", fields: [approvedBy], references: [id], onDelete: SetNull)
+  approvedAt      DateTime?
+  expenseRejectionReason String?
+  isDeductibleFromCRG    Boolean @default(true)
   resolutionNotes String?
   resolvedAt      DateTime?
   createdAt       DateTime      @default(now())
@@ -630,5 +650,68 @@ model City {
 
   @@unique([countryId, name])
   @@map("cities")
+}
+
+// Landlords (Bailleurs mandants propriétaires)
+model Landlord {
+  id                    String             @id @default(uuid())
+  organizationId        String
+  organization          Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type                  String             @default("individual") // 'individual', 'company'
+  firstName             String?
+  lastName              String?
+  companyName           String?
+  email                 String?
+  phone                 String
+  address               String?
+  city                  String?            @default("Abidjan")
+  idNumber              String?            // CNI / Passeport / RCCM
+  bankName              String?
+  ibanOrRib             String?
+  mobileMoneyNumber     String?            // Numéro de reversement mobile money
+  managementFeeRate     Decimal            @default(8.0) @db.Decimal(5, 2) // Taux d'honoraires agence en % (ex: 8.00)
+  feeTaxRate            Decimal            @default(0.0) @db.Decimal(5, 2) // Taux de TVA sur honoraires en % (ex: 18.00)
+  notes                 String?
+  isActive              Boolean            @default(true)
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  properties            Property[]         @relation("LandlordProperties")
+  managementReports     ManagementReport[]
+
+  @@map("landlords")
+}
+
+// Management Reports (Comptes-Rendus de Gestion - CRG)
+model ManagementReport {
+  id                    String        @id @default(uuid())
+  reportNumber          String        @unique // Format: CRG-YYYY-MM-XXXX
+  organizationId        String
+  organization          Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  landlordId            String
+  landlord              Landlord      @relation(fields: [landlordId], references: [id], onDelete: Cascade)
+  periodMonth           Int
+  periodYear            Int
+  startDate             DateTime
+  endDate               DateTime
+  grossRentCollected    Decimal       @default(0) @db.Decimal(15, 2) // Somme des loyers et charges réellement perçus
+  managementFeeRate     Decimal       @db.Decimal(5, 2) // Taux d'honoraires agence appliqué
+  managementFees        Decimal       @default(0) @db.Decimal(15, 2) // Montant honoraires HT
+  feeTaxRate            Decimal       @default(0) @db.Decimal(5, 2) // Taux TVA
+  feeTaxAmount          Decimal       @default(0) @db.Decimal(15, 2) // Montant TVA
+  maintenanceExpenses   Decimal       @default(0) @db.Decimal(15, 2) // Dépenses de travaux déduites
+  otherDeductions       Decimal       @default(0) @db.Decimal(15, 2) // Autres déductions (gardiennage, taxes foncières, etc.)
+  netPayableToLandlord  Decimal       @default(0) @db.Decimal(15, 2) // Net à reverser au bailleur
+  status                String        @default("draft") // 'draft', 'validated', 'paid_out'
+  paymentDate           DateTime?
+  paymentReference      String?
+  pdfUrl                String?
+  itemsSummary          Json?         @default("[]") // Détail par lot / locataire / quittance / dépense
+  notes                 String?
+  createdById           String?
+  creator               User?         @relation("ReportCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@map("management_reports")
 }
 

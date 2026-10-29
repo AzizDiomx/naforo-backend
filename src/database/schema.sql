@@ -392,3 +392,74 @@ CREATE INDEX IF NOT EXISTS idx_cities_country ON cities(country_id);
 -- Assurer que la colonne country des properties supporte les noms de pays complets
 ALTER TABLE properties ALTER COLUMN country TYPE VARCHAR(100);
 
+-- =============================================================================
+-- Bailleurs Mandants & Comptes-Rendus de Gestion (CRG)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS landlords (
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id         UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  type                    VARCHAR(50) DEFAULT 'individual',
+  first_name              VARCHAR(100),
+  last_name               VARCHAR(100),
+  company_name            VARCHAR(255),
+  email                   VARCHAR(255),
+  phone                   VARCHAR(50) NOT NULL,
+  address                 TEXT,
+  city                    VARCHAR(100) DEFAULT 'Abidjan',
+  id_number               VARCHAR(100),
+  bank_name               VARCHAR(100),
+  iban_or_rib             VARCHAR(100),
+  mobile_money_number     VARCHAR(50),
+  management_fee_rate     DECIMAL(5,2) DEFAULT 8.00,
+  fee_tax_rate            DECIMAL(5,2) DEFAULT 0.00,
+  notes                   TEXT,
+  is_active               BOOLEAN DEFAULT true,
+  created_at              TIMESTAMPTZ DEFAULT NOW(),
+  updated_at              TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS management_reports (
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  report_number           VARCHAR(100) UNIQUE NOT NULL,
+  organization_id         UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  landlord_id             UUID NOT NULL REFERENCES landlords(id) ON DELETE CASCADE,
+  period_month            INTEGER NOT NULL,
+  period_year             INTEGER NOT NULL,
+  start_date              TIMESTAMPTZ NOT NULL,
+  end_date                TIMESTAMPTZ NOT NULL,
+  gross_rent_collected    DECIMAL(15,2) DEFAULT 0,
+  management_fee_rate     DECIMAL(5,2) NOT NULL,
+  management_fees         DECIMAL(15,2) DEFAULT 0,
+  fee_tax_rate            DECIMAL(5,2) DEFAULT 0,
+  fee_tax_amount          DECIMAL(15,2) DEFAULT 0,
+  maintenance_expenses    DECIMAL(15,2) DEFAULT 0,
+  other_deductions        DECIMAL(15,2) DEFAULT 0,
+  net_payable_to_landlord DECIMAL(15,2) DEFAULT 0,
+  status                  VARCHAR(50) DEFAULT 'draft',
+  payment_date            TIMESTAMPTZ,
+  payment_reference       VARCHAR(100),
+  pdf_url                 TEXT,
+  items_summary           JSONB DEFAULT '[]'::jsonb,
+  notes                   TEXT,
+  created_by_id           UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at              TIMESTAMPTZ DEFAULT NOW(),
+  updated_at              TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE properties ADD COLUMN IF NOT EXISTS landlord_id UUID REFERENCES landlords(id) ON DELETE SET NULL;
+
+ALTER TABLE tenant_profiles ADD COLUMN IF NOT EXISTS risk_level VARCHAR(20) DEFAULT 'low';
+ALTER TABLE tenant_profiles ADD COLUMN IF NOT EXISTS predicted_default_probability INTEGER DEFAULT 5;
+ALTER TABLE tenant_profiles ADD COLUMN IF NOT EXISTS risk_factors JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE tenant_profiles ADD COLUMN IF NOT EXISTS last_scoring_date TIMESTAMPTZ;
+
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS estimated_cost DECIMAL(15,2);
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS actual_cost DECIMAL(15,2);
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS quote_url TEXT;
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS invoice_url TEXT;
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS expense_status VARCHAR(50) DEFAULT 'none';
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS approved_by UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS expense_rejection_reason TEXT;
+ALTER TABLE incidents ADD COLUMN IF NOT EXISTS is_deductible_from_crg BOOLEAN DEFAULT true;
+

@@ -33,3 +33,29 @@ export const ResolveIncidentSchema = z.object({
     resolvedAt: z.union([z.string(), z.date()]).optional(),
   }),
 });
+
+export const SubmitQuoteSchema = z.object({
+  body: z.object({
+    estimatedCost: z.number().positive("Le montant du devis doit être supérieur à zéro."),
+    quoteUrl: z.string().optional().nullable(),
+    description: z.string().optional().nullable(),
+  }),
+});
+
+export const ApproveExpenseSchema = z.object({
+  body: z.object({
+    approved: z.boolean(),
+    actualCost: z.number().nonnegative().optional(),
+    invoiceUrl: z.string().optional().nullable(),
+    rejectionReason: z.string().optional().nullable(),
+    isDeductibleFromCRG: z.boolean().default(true),
+  }),
+});
+
+export const PayExpenseSchema = z.object({
+  body: z.object({
+    actualCost: z.number().positive().optional(),
+    invoiceUrl: z.string().optional().nullable(),
+    notes: z.string().optional().nullable(),
+  }),
+});

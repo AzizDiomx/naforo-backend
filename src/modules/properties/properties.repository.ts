@@ -58,6 +58,7 @@ export class PropertiesRepository {
         include: {
           parent: { select: { id: true, name: true, type: true } },
           manager: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+          landlord: { select: { id: true, firstName: true, lastName: true, companyName: true, type: true } },
         },
       }),
       prisma.property.count({ where }),
@@ -78,6 +79,18 @@ export class PropertiesRepository {
             email: true,
             phone: true,
             role: true,
+          },
+        },
+        landlord: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            companyName: true,
+            type: true,
+            email: true,
+            phone: true,
+            managementFeeRate: true,
           },
         },
         parent: {

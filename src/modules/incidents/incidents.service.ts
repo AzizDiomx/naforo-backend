@@ -282,6 +282,55 @@ export class IncidentsService {
   async getStats(organizationId: string): Promise<any> {
     return incidentsRepository.getStats(organizationId);
   }
+
+  async submitQuote(id: string, organizationId: string, data: any): Promise<Incident> {
+    await this.getIncidentById(id, organizationId);
+
+    const updated = await incidentsRepository.update(id, {
+      estimatedCost: data.estimatedCost,
+      quoteUrl: data.quoteUrl || undefined,
+      expenseStatus: 'pending_approval',
+    });
+
+    emitToOrg(organizationId, 'incident:quote_submitted', updated);
+    return updated;
+  }
+
+  async approveExpense(id: string, organizationId: string, userId: string, data: any): Promise<Incident> {
+    const incident = await this.getIncidentById(id, organizationId);
+
+    const isApproved = Boolean(data.approved);
+    const updateData: any = {
+      expenseStatus: isApproved ? 'approved' : 'rejected',
+      approvedBy: isApproved ? userId : null,
+      approvedAt: isApproved ? new Date() : null,
+      expenseRejectionReason: !isApproved ? (data.rejectionReason || 'Rejeté par la direction') : null,
+      isDeductibleFromCRG: data.isDeductibleFromCRG !== undefined ? Boolean(data.isDeductibleFromCRG) : true,
+    };
+
+    if (isApproved) {
+      if (data.actualCost !== undefined) updateData.actualCost = data.actualCost;
+      else if (incident.estimatedCost) updateData.actualCost = incident.estimatedCost;
+      if (data.invoiceUrl) updateData.invoiceUrl = data.invoiceUrl;
+    }
+
+    const updated = await incidentsRepository.update(id, updateData);
+    emitToOrg(organizationId, 'incident:expense_reviewed', updated);
+    return updated;
+  }
+
+  async payExpense(id: string, organizationId: string, userId: string, data: any): Promise<Incident> {
+    await this.getIncidentById(id, organizationId);
+
+    const updated = await incidentsRepository.update(id, {
+      expenseStatus: 'paid',
+      actualCost: data.actualCost || undefined,
+      invoiceUrl: data.invoiceUrl || undefined,
+    });
+
+    emitToOrg(organizationId, 'incident:expense_paid', updated);
+    return updated;
+  }
 }
 
 export const incidentsService = new IncidentsService();

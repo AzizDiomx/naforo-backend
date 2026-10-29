@@ -18,6 +18,8 @@ import tenantPortalRoutes from '@/modules/tenant-portal/tenant-portal.routes';
 import adminRoutes from '@/modules/admin/admin.routes';
 import chatRoutes from '@/modules/chat/chat.routes';
 import locationsRoutes from '@/modules/locations/locations.routes';
+import landlordRoutes from '@/modules/landlords/landlords.routes';
+import managementReportRoutes from '@/modules/management-reports/management-reports.routes';
 
 const router = Router();
 
@@ -25,6 +27,8 @@ router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/organizations', organizationRoutes);
 router.use('/properties', propertyRoutes);
+router.use('/landlords', landlordRoutes);
+router.use('/management-reports', managementReportRoutes);
 router.use('/tenant-profiles', tenantProfileRoutes);
 router.use('/contracts', contractRoutes);
 router.use('/payments', paymentRoutes);

@@ -58,6 +58,13 @@ router.get(
   tenantProfilesController.getHistory
 );
 
+router.post(
+  '/:id/recalculate-risk',
+  authorize('admin', 'manager', 'owner'),
+  auditLog('RECALCULATE_TENANT_RISK', 'TenantProfile'),
+  tenantProfilesController.recalculateRiskScore
+);
+
 router.delete(
   '/:id', 
   authorize('admin'), 

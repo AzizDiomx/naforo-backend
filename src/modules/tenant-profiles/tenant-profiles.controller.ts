@@ -48,3 +48,8 @@ export const deleteTenantProfile = asyncHandler(async (req: Request, res: Respon
   await tenantProfilesService.deleteTenantProfile(req.params.id, req.organizationId!);
   return sendSuccess(res, null, 'Profil locataire supprimé.');
 });
+
+export const recalculateRiskScore = asyncHandler(async (req: Request, res: Response) => {
+  const result = await tenantProfilesService.calculateRiskScoring(req.params.id, req.organizationId!);
+  return sendSuccess(res, result, 'Score de risque et prédiction actualisés avec succès.');
+});
