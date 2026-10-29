@@ -9,6 +9,8 @@ import {
   CreateContractSchema,
   UpdateContractSchema,
   TerminateContractSchema,
+  SendOtpSchema,
+  SignOtpSchema,
 } from './contracts.schema';
 
 import { checkSubscription } from '@/shared/middlewares/subscription.middleware';
@@ -65,6 +67,28 @@ router.post(
   validate(TerminateContractSchema), 
   auditLog('TERMINATE_CONTRACT', 'Contract'),
   contractsController.terminateContract
+);
+
+router.get(
+  '/:id/pdf',
+  authorize('admin', 'manager', 'owner', 'tenant'),
+  contractsController.generatePdf
+);
+
+router.post(
+  '/:id/send-otp',
+  authorize('admin', 'manager', 'owner'),
+  validate(SendOtpSchema),
+  auditLog('SEND_SIGNATURE_OTP', 'Contract'),
+  contractsController.sendSignatureOtp
+);
+
+router.post(
+  '/:id/sign-otp',
+  authorize('admin', 'manager', 'owner', 'tenant'),
+  validate(SignOtpSchema),
+  auditLog('SIGN_CONTRACT_OTP', 'Contract'),
+  contractsController.signContractWithOtp
 );
 
 export default router;

@@ -50,3 +50,16 @@ export const TerminateContractSchema = z.object({
     terminatedAt: z.string().transform((val) => new Date(val)).default(() => new Date().toISOString()),
   }),
 });
+
+export const SendOtpSchema = z.object({
+  body: z.object({
+    phone: z.string().optional(),
+  }),
+});
+
+export const SignOtpSchema = z.object({
+  body: z.object({
+    otp: z.string({ required_error: 'Le code OTP est obligatoire.' }).min(4, 'Le code OTP est invalide.').max(8),
+    drawSignature: z.string().optional(),
+  }),
+});

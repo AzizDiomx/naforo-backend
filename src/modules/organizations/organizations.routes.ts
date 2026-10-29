@@ -4,7 +4,8 @@ import { validate } from '@/shared/middlewares/validate.middleware';
 import { authenticate } from '@/shared/middlewares/auth.middleware';
 import { authorize } from '@/shared/middlewares/rbac.middleware';
 import { auditLog } from '@/shared/middlewares/audit.middleware';
-import { CreateOrganizationSchema, UpdateOrganizationSchema } from './organizations.schema';
+import { uploadSingle } from '@/shared/middlewares/upload.middleware';
+import { CreateOrganizationSchema, UpdateOrganizationSchema, UpdateBrandingSchema } from './organizations.schema';
 
 const router = Router();
 
@@ -62,6 +63,37 @@ router.post(
   authorize('super_admin', 'admin', 'owner'),
   auditLog('CANCEL_ACCOUNT_DELETION', 'Organization'),
   orgsController.cancelAccountDeletion
+);
+
+// Marque Blanche Agence (White-Label Branding)
+router.get(
+  '/:id/branding',
+  authorize('super_admin', 'admin', 'owner', 'manager'),
+  orgsController.getBranding
+);
+
+router.put(
+  '/:id/branding',
+  authorize('super_admin', 'admin', 'owner'),
+  validate(UpdateBrandingSchema),
+  auditLog('UPDATE_ORGANIZATION_BRANDING', 'Organization'),
+  orgsController.updateBranding
+);
+
+router.post(
+  '/:id/stamp',
+  authorize('super_admin', 'admin', 'owner'),
+  uploadSingle('stamp'),
+  auditLog('UPLOAD_AGENCY_STAMP', 'Organization'),
+  orgsController.uploadStamp
+);
+
+router.post(
+  '/:id/logo',
+  authorize('super_admin', 'admin', 'owner'),
+  uploadSingle('logo'),
+  auditLog('UPLOAD_AGENCY_LOGO', 'Organization'),
+  orgsController.uploadLogo
 );
 
 export default router;

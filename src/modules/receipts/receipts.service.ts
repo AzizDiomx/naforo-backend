@@ -136,18 +136,30 @@ export class ReceiptsService {
     const writeStream = fs.createWriteStream(absolutePath);
     doc.pipe(writeStream);
 
-    // 1. Header (Branding & Logo)
-    doc.fillColor('#4f46e5').fontSize(24).font('Helvetica-Bold').text('Naforo', 50, 45);
-    doc.fillColor('#6b7280').fontSize(9).font('Helvetica').text('Gestion Locative Intelligente', 50, 70);
+    const primaryBrandColor = receipt.organization.primaryColor || '#013e37';
+    const agencyName = (receipt.organization.name || 'Agence Immobilière').toUpperCase();
+    const agencyTagline = receipt.organization.tagline || 'Gestion Locative Intelligente & Administration de Biens';
 
-    // Org info
-    doc.fillColor('#1f2937').fontSize(10).font('Helvetica-Bold').text(receipt.organization.name, 400, 45, { align: 'right' });
-    if (receipt.organization.phone) {
-      doc.font('Helvetica').fontSize(9).fillColor('#4b5563').text(`Tel: ${receipt.organization.phone}`, 400, 60, { align: 'right' });
+    // 1. Header (Branding & Logo)
+    doc.fillColor(primaryBrandColor).fontSize(20).font('Helvetica-Bold').text(agencyName, 50, 45);
+    doc.fillColor('#6b7280').fontSize(8.5).font('Helvetica').text(agencyTagline, 50, 70);
+
+    // Org info & legal mentions
+    doc.fillColor('#1f2937').fontSize(9).font('Helvetica-Bold').text(receipt.organization.name, 350, 45, { align: 'right', width: 200 });
+    const contactLine = [receipt.organization.phone ? `Tél: ${receipt.organization.phone}` : null, receipt.organization.email].filter(Boolean).join(' • ');
+    if (contactLine) {
+      doc.font('Helvetica').fontSize(8).fillColor('#4b5563').text(contactLine, 350, 58, { align: 'right', width: 200 });
+    }
+    const legalLine = [
+      receipt.organization.rccm ? `RCCM : ${receipt.organization.rccm}` : null,
+      receipt.organization.taxNumber ? `CC : ${receipt.organization.taxNumber}` : null,
+    ].filter(Boolean).join(' | ');
+    if (legalLine) {
+      doc.font('Helvetica').fontSize(7.5).fillColor('#6b7280').text(legalLine, 350, 70, { align: 'right', width: 200 });
     }
 
     doc.moveDown(2);
-    doc.strokeColor('#e5e7eb').lineWidth(1).moveTo(50, 95).lineTo(550, 95).stroke();
+    doc.strokeColor(primaryBrandColor).lineWidth(1.5).moveTo(50, 95).lineTo(550, 95).stroke();
 
     // 2. Title Section
     doc.moveDown(1.5);
@@ -223,9 +235,18 @@ export class ReceiptsService {
     }
 
     // Signature Block
-    doc.fillColor('#1f2937').fontSize(10).font('Helvetica-Bold').text('Signature numérique Naforo', 320, bottomY);
-    doc.fillColor('#4f46e5').fontSize(8).font('Courier').text(receipt.digitalSignature.slice(0, 32) + '...', 320, bottomY + 15, { width: 230 });
-    doc.fillColor('#9ca3af').fontSize(8).font('Helvetica-Oblique').text('Ce document est certifié électroniquement.', 320, bottomY + 35);
+    doc.fillColor('#1f2937').fontSize(9.5).font('Helvetica-Bold').text(`Cachet & Visa de l'Agence :`, 320, bottomY);
+    doc.fillColor(primaryBrandColor).fontSize(8).font('Courier').text(receipt.digitalSignature.slice(0, 32) + '...', 320, bottomY + 14, { width: 230 });
+    doc.fillColor('#9ca3af').fontSize(7.5).font('Helvetica-Oblique').text('Quittance certifiée conforme par Naforo Secure Sign.', 320, bottomY + 28);
+
+    if (receipt.organization.stampUrl) {
+      const stampPath = path.join(process.cwd(), receipt.organization.stampUrl.replace(/^\//, ''));
+      if (fs.existsSync(stampPath)) {
+        try {
+          doc.image(stampPath, 340, bottomY + 40, { width: 80 });
+        } catch {}
+      }
+    }
 
     doc.end();
 

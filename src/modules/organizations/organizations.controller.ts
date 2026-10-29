@@ -69,3 +69,51 @@ export const cancelAccountDeletion = asyncHandler(async (req: Request, res: Resp
   const result = await organizationsService.cancelAccountDeletion(targetId, req.user!.userId);
   return sendSuccess(res, result, result.message);
 });
+
+export const getBranding = asyncHandler(async (req: Request, res: Response) => {
+  const targetId = req.params.id;
+  if (req.user!.role !== 'super_admin' && req.organizationId !== targetId) {
+    throw new ForbiddenError('Accès interdit : Vous n\'avez pas accès à cette organisation.');
+  }
+
+  const branding = await organizationsService.getBranding(targetId);
+  return sendSuccess(res, branding, 'Paramètres de marque blanche récupérés.');
+});
+
+export const updateBranding = asyncHandler(async (req: Request, res: Response) => {
+  const targetId = req.params.id;
+  if (req.user!.role !== 'super_admin' && req.organizationId !== targetId) {
+    throw new ForbiddenError('Accès interdit : Vous n\'avez pas accès à cette organisation.');
+  }
+
+  const updated = await organizationsService.updateBranding(targetId, req.body);
+  return sendSuccess(res, updated, 'Marque blanche mise à jour avec succès.');
+});
+
+export const uploadStamp = asyncHandler(async (req: Request, res: Response) => {
+  const targetId = req.params.id;
+  if (req.user!.role !== 'super_admin' && req.organizationId !== targetId) {
+    throw new ForbiddenError('Accès interdit : Vous n\'avez pas accès à cette organisation.');
+  }
+
+  const file = req.file;
+  if (!file) throw new BadRequestError('Aucun fichier fourni pour le cachet.');
+
+  const stampUrl = `/uploads/${file.filename}`;
+  const updated = await organizationsService.uploadStamp(targetId, stampUrl);
+  return sendSuccess(res, updated, 'Cachet officiel enregistré avec succès.');
+});
+
+export const uploadLogo = asyncHandler(async (req: Request, res: Response) => {
+  const targetId = req.params.id;
+  if (req.user!.role !== 'super_admin' && req.organizationId !== targetId) {
+    throw new ForbiddenError('Accès interdit : Vous n\'avez pas accès à cette organisation.');
+  }
+
+  const file = req.file;
+  if (!file) throw new BadRequestError('Aucun fichier fourni pour le logo.');
+
+  const logoUrl = `/uploads/${file.filename}`;
+  const updated = await organizationsService.uploadLogo(targetId, logoUrl);
+  return sendSuccess(res, updated, 'Logo de marque enregistré avec succès.');
+});

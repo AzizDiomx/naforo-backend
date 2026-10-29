@@ -339,6 +339,28 @@ app.get('/uploads/crg/:filename', async (req: Request, res: Response, next: Next
   next();
 });
 
+// Gestionnaire dynamique des Contrats de bail certifiés (PDF)
+app.get('/uploads/contracts/:filename', async (req: Request, res: Response, next: NextFunction) => {
+  const filename = req.params.filename;
+  if (!filename.endsWith('.pdf')) return next();
+
+  const candidates = [
+    path.join(staticUploadsDirTmp, 'contracts', filename),
+    path.join(staticUploadsDirLocal, 'contracts', filename),
+    path.join(os.tmpdir(), filename),
+  ];
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+      return res.sendFile(p);
+    }
+  }
+
+  next();
+});
+
 // 6. Mount central router
 app.use(env.API_PREFIX, router);
 

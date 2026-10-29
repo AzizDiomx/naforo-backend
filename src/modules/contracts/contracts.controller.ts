@@ -60,3 +60,32 @@ export const getStats = asyncHandler(async (req: Request, res: Response) => {
   const stats = await contractsService.getStats(req.organizationId!);
   return sendSuccess(res, stats, 'Statistiques des contrats récupérées.');
 });
+
+export const generatePdf = asyncHandler(async (req: Request, res: Response) => {
+  const result = await contractsService.generateContractPDFDocument(req.params.id, req.organizationId!);
+  return sendSuccess(res, result, 'Document du bail généré avec succès.');
+});
+
+export const sendSignatureOtp = asyncHandler(async (req: Request, res: Response) => {
+  const result = await contractsService.sendSignatureOtp(
+    req.params.id,
+    req.organizationId!,
+    req.body.phone
+  );
+  return sendSuccess(res, result, result.message);
+});
+
+export const signContractWithOtp = asyncHandler(async (req: Request, res: Response) => {
+  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+  const userAgent = req.headers['user-agent'] || 'Naforo Web App';
+
+  const result = await contractsService.signContractWithOtp(
+    req.params.id,
+    req.organizationId!,
+    req.body.otp,
+    ip,
+    userAgent,
+    req.body.drawSignature
+  );
+  return sendSuccess(res, result, result.message);
+});

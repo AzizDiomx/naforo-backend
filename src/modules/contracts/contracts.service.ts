@@ -6,6 +6,8 @@ import { emitToOrg } from '@/sockets/socket.handler';
 import { PaginationQuery, PaginationMeta } from '@/shared/types';
 import { buildPaginationMeta } from '@/shared/helpers/pagination';
 import { generateContractNumber } from '@/shared/helpers/crypto';
+import crypto from 'crypto';
+import { generateContractPDF } from './contract.pdf';
 
 export class ContractsService {
   async getAllContracts(
@@ -153,6 +155,160 @@ export class ContractsService {
 
   async getStats(organizationId: string): Promise<any> {
     return contractsRepository.getStats(organizationId);
+  }
+
+  async generateContractPDFDocument(id: string, organizationId: string): Promise<{ pdfUrl: string }> {
+    const contract = await prisma.contract.findFirst({
+      where: { id, organizationId },
+      include: {
+        organization: true,
+        tenantProfile: true,
+        property: {
+          include: {
+            landlord: true,
+            parent: true,
+          },
+        },
+      },
+    });
+
+    if (!contract) throw new NotFoundError('Contrat de bail introuvable.');
+
+    const pdfResult = await generateContractPDF({
+      contract,
+      organization: contract.organization,
+      property: contract.property,
+      tenant: contract.tenantProfile,
+      landlord: contract.property.landlord,
+    });
+
+    await prisma.contract.update({
+      where: { id },
+      data: {
+        documentUrl: pdfResult.relativePath,
+        ...(contract.signatureStatus === 'signed' ? { signedPdfUrl: pdfResult.relativePath } : {}),
+      },
+    });
+
+    return { pdfUrl: pdfResult.relativePath };
+  }
+
+  async sendSignatureOtp(id: string, organizationId: string, customPhone?: string): Promise<any> {
+    const contract = await prisma.contract.findFirst({
+      where: { id, organizationId },
+      include: { tenantProfile: true },
+    });
+
+    if (!contract) throw new NotFoundError('Contrat de bail introuvable.');
+    if (contract.status === 'terminated') throw new BadRequestError('Ce contrat est déjà résilié.');
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const targetPhone = customPhone || contract.tenantProfile.phone;
+
+    const updated = await prisma.contract.update({
+      where: { id },
+      data: {
+        signatureOtp: otp,
+        signatureOtpExpiresAt: expiresAt,
+        signaturePhone: targetPhone,
+        signatureStatus: 'otp_sent',
+      },
+    });
+
+    emitToOrg(organizationId, 'contract:otp_sent', {
+      contractId: id,
+      phone: targetPhone,
+      expiresAt,
+    });
+
+    return {
+      success: true,
+      contractId: id,
+      phone: targetPhone,
+      expiresAt,
+      demoOtp: otp,
+      message: `Code OTP de signature (${otp}) transmis au locataire (${targetPhone}). Valable 15 minutes.`,
+    };
+  }
+
+  async signContractWithOtp(
+    id: string,
+    organizationId: string,
+    otp: string,
+    ip: string,
+    userAgent: string,
+    drawSignature?: string
+  ): Promise<any> {
+    const contract = await prisma.contract.findFirst({
+      where: { id, organizationId },
+      include: {
+        organization: true,
+        tenantProfile: true,
+        property: {
+          include: {
+            landlord: true,
+            parent: true,
+          },
+        },
+      },
+    });
+
+    if (!contract) throw new NotFoundError('Contrat de bail introuvable.');
+    if (contract.status === 'terminated') throw new BadRequestError('Ce contrat est résilié.');
+
+    if (!contract.signatureOtp || contract.signatureOtp !== otp.trim()) {
+      throw new BadRequestError('Code OTP de signature incorrect ou invalide.');
+    }
+
+    if (contract.signatureOtpExpiresAt && new Date() > contract.signatureOtpExpiresAt) {
+      throw new BadRequestError('Ce code OTP a expiré. Veuillez générer un nouveau code.');
+    }
+
+    const hashPayload = `${contract.id}-${contract.contractNumber}-${Date.now()}-${otp}-${contract.tenantProfile?.nationalId || ''}`;
+    const signatureHash = crypto.createHash('sha256').update(hashPayload).digest('hex');
+    const signedAt = new Date();
+
+    const pdfResult = await generateContractPDF({
+      contract: {
+        ...contract,
+        signatureStatus: 'signed',
+        signedAt,
+        signatureHash,
+        signatureIp: ip,
+        signaturePhone: contract.signaturePhone || contract.tenantProfile.phone,
+      },
+      organization: contract.organization,
+      property: contract.property,
+      tenant: contract.tenantProfile,
+      landlord: contract.property.landlord,
+    });
+
+    const updatedContract = await prisma.contract.update({
+      where: { id },
+      data: {
+        signatureStatus: 'signed',
+        signedAt,
+        signatureIp: ip,
+        signatureUserAgent: userAgent,
+        signatureHash,
+        tenantSignatureUrl: drawSignature || null,
+        signedPdfUrl: pdfResult.relativePath,
+        documentUrl: pdfResult.relativePath,
+        status: 'active',
+      },
+    });
+
+    emitToOrg(organizationId, 'contract:signed', updatedContract);
+
+    return {
+      success: true,
+      contract: updatedContract,
+      signedPdfUrl: pdfResult.relativePath,
+      signatureHash,
+      signedAt,
+      message: 'Le contrat de bail a été signé électroniquement avec succès.',
+    };
   }
 }
 

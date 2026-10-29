@@ -18,6 +18,16 @@ model Organization {
   city             String?
   country          String            @default("CI")
   logoUrl          String?
+  primaryColor     String?           @default("#013e37")
+  accentColor      String?           @default("#ffefb3")
+  stampUrl         String?
+  signatureUrl     String?
+  rccm             String?
+  taxNumber        String?
+  licenseNumber    String?
+  website          String?
+  tagline          String?
+  whiteLabelEnabled Boolean          @default(false)
   plan             String            @default("starter")
   isActive         Boolean           @default(true)
   settings         Json?             @default("{}")
@@ -190,6 +200,16 @@ model Contract {
   notes                  String?
   documentUrl            String?
   signedAt               DateTime?
+  signatureStatus        String        @default("unsigned") // 'unsigned','otp_sent','signed','rejected'
+  signatureType          String?       @default("otp_sms")
+  signatureOtp           String?
+  signatureOtpExpiresAt  DateTime?
+  signaturePhone         String?
+  signatureIp            String?
+  signatureUserAgent     String?
+  signatureHash          String?
+  tenantSignatureUrl     String?
+  signedPdfUrl           String?
   terminatedAt           DateTime?
   terminationReason      String?
   createdBy              String?

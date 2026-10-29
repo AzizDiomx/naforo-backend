@@ -330,6 +330,60 @@ export class OrganizationsService {
       message: 'La demande de suppression a été annulée avec succès. Votre compte est réactivé.',
     };
   }
+
+  async getBranding(organizationId: string): Promise<any> {
+    const org = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        address: true,
+        city: true,
+        country: true,
+        logoUrl: true,
+        primaryColor: true,
+        accentColor: true,
+        stampUrl: true,
+        signatureUrl: true,
+        rccm: true,
+        taxNumber: true,
+        licenseNumber: true,
+        website: true,
+        tagline: true,
+        whiteLabelEnabled: true,
+        plan: true,
+      },
+    });
+
+    if (!org) throw new NotFoundError('Organisation introuvable.');
+    return org;
+  }
+
+  async updateBranding(organizationId: string, data: any): Promise<any> {
+    const org = await prisma.organization.findUnique({ where: { id: organizationId } });
+    if (!org) throw new NotFoundError('Organisation introuvable.');
+
+    return prisma.organization.update({
+      where: { id: organizationId },
+      data,
+    });
+  }
+
+  async uploadStamp(organizationId: string, stampUrl: string): Promise<any> {
+    return prisma.organization.update({
+      where: { id: organizationId },
+      data: { stampUrl },
+    });
+  }
+
+  async uploadLogo(organizationId: string, logoUrl: string): Promise<any> {
+    return prisma.organization.update({
+      where: { id: organizationId },
+      data: { logoUrl },
+    });
+  }
 }
 
 export const organizationsService = new OrganizationsService();
