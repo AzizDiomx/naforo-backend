@@ -5,6 +5,7 @@ import os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { env } from '@/config/env';
 import { BadRequestError } from '../errors/AppError';
+import { saveFileToDatabase } from '../helpers/file-storage';
 
 // Serverless environments (Vercel / AWS Lambda) have a read-only filesystem at /var/task.
 // Only /tmp is writable.
@@ -68,50 +69,60 @@ export const upload = multer({
 
 /**
  * Verify Magic Bytes (Binary Header Signatures) of uploaded files
+ * and persist validated files into PostgreSQL for serverless/container resilience.
  */
-export function verifyMagicBytes(req: any, res: any, next: any) {
-  const file = req.file;
-  if (!file) return next();
+export async function verifyMagicBytes(req: any, res: any, next: any) {
+  const filesToProcess: Express.Multer.File[] = [];
+  if (req.file) filesToProcess.push(req.file);
+  if (Array.isArray(req.files)) filesToProcess.push(...req.files);
+
+  if (filesToProcess.length === 0) return next();
 
   try {
-    const filePath = file.path;
-    const buffer = Buffer.alloc(12);
-    const fd = fs.openSync(filePath, 'r');
-    fs.readSync(fd, buffer, 0, 12, 0);
-    fs.closeSync(fd);
+    for (const file of filesToProcess) {
+      const filePath = file.path;
+      const buffer = Buffer.alloc(12);
+      const fd = fs.openSync(filePath, 'r');
+      fs.readSync(fd, buffer, 0, 12, 0);
+      fs.closeSync(fd);
 
-    let isValid = false;
+      let isValid = false;
 
-    // Check PDF Magic Bytes: %PDF- (0x25 0x50 0x44 0x46 0x2D)
-    if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
-      isValid = true;
-    }
-    // Check PNG Magic Bytes: 0x89 0x50 0x4E 0x47
-    else if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
-      isValid = true;
-    }
-    // Check JPEG Magic Bytes: 0xFF 0xD8 0xFF
-    else if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
-      isValid = true;
-    }
-    // Check WEBP Magic Bytes: RIFF...WEBP
-    else if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
-             buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
-      isValid = true;
-    }
-
-    if (!isValid) {
-      // Delete malicious or corrupted file immediately
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      // Check PDF Magic Bytes: %PDF- (0x25 0x50 0x44 0x46 0x2D)
+      if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+        isValid = true;
       }
-      return next(new BadRequestError("Signature binaire du fichier invalide (falsification ou format binaire non reconnu)."));
+      // Check PNG Magic Bytes: 0x89 0x50 0x4E 0x47
+      else if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+        isValid = true;
+      }
+      // Check JPEG Magic Bytes: 0xFF 0xD8 0xFF
+      else if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+        isValid = true;
+      }
+      // Check WEBP Magic Bytes: RIFF...WEBP
+      else if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 &&
+               buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
+        isValid = true;
+      }
+
+      if (!isValid) {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+        return next(new BadRequestError("Signature binaire du fichier invalide (falsification ou format binaire non reconnu)."));
+      }
+
+      // Persist binary file in PostgreSQL so it survives container restarts / redeployments
+      await saveFileToDatabase(file.filename, filePath, file.mimetype, file.originalname, file.size);
     }
 
     next();
   } catch (error) {
-    if (file?.path && fs.existsSync(file.path)) {
-      fs.unlinkSync(file.path);
+    for (const file of filesToProcess) {
+      if (file?.path && fs.existsSync(file.path)) {
+        try { fs.unlinkSync(file.path); } catch (_) {}
+      }
     }
     next(new BadRequestError("Erreur lors de la vérification de l'intégrité binaire du fichier."));
   }

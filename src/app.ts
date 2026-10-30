@@ -13,10 +13,7 @@ import { prisma } from '@/config/database';
 import { logger } from '@/config/logger';
 import { errorMiddleware } from '@/shared/middlewares/error.middleware';
 import router from '@/routes';
-import { receiptsService } from '@/modules/receipts/receipts.service';
-import { invoicesService } from '@/modules/invoices/invoices.service';
-import { generateSubscriptionInvoicePdf } from '@/modules/subscriptions/pdf.generator';
-import { convertAmountXof } from '@/modules/accounting/accounting.repository';
+import { resolveOrRegenerateUpload } from '@/shared/helpers/file-storage';
 
 const app: Express = express();
 
@@ -133,7 +130,7 @@ app.use(`${env.API_PREFIX}/auth/login`, authLimiter);
 app.use(`${env.API_PREFIX}/auth/register`, authLimiter);
 app.use(`${env.API_PREFIX}/auth/forgot-password`, authLimiter);
 
-// 5. Static uploads directory serving & On-demand PDF recovery (Résilience Serverless / Vercel)
+// 5. Static uploads directory serving & On-demand file/PDF recovery (Résilience Serverless / Conteneurs)
 const staticUploadsDirLocal = path.join(process.cwd(), env.UPLOAD_DIR || 'uploads');
 const staticUploadsDirTmp = path.join(os.tmpdir(), env.UPLOAD_DIR || 'uploads');
 
@@ -141,226 +138,39 @@ const staticUploadsDirTmp = path.join(os.tmpdir(), env.UPLOAD_DIR || 'uploads');
 app.use('/uploads', express.static(staticUploadsDirLocal, { maxAge: '1d' }));
 app.use('/uploads', express.static(staticUploadsDirTmp, { maxAge: '1d' }));
 
-// Gestionnaire dynamique de Quittances / Reçus (Régénération à la volée en cas de cold start / fichier éphémère)
-app.get('/uploads/receipts/:filename', async (req: Request, res: Response, next: NextFunction) => {
+const serveResolvedUpload = async (req: Request, res: Response, next: NextFunction, subfolder?: string) => {
   const filename = req.params.filename;
-  if (!filename.endsWith('.pdf')) return next();
-
-  const candidates = [
-    path.join(staticUploadsDirTmp, 'receipts', filename),
-    path.join(staticUploadsDirLocal, 'receipts', filename),
-    path.join(os.tmpdir(), filename),
-  ];
-
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-      return res.sendFile(p);
-    }
-  }
+  if (!filename) return next();
 
   try {
-    const receiptNumber = filename.replace(/\.pdf$/i, '');
-    const receipt = await prisma.receipt.findFirst({
-      where: {
-        OR: [
-          { receiptNumber },
-          { pdfUrl: { endsWith: filename } },
-          { pdfUrl: { contains: receiptNumber } },
-        ],
-      },
-    });
-
-    if (receipt) {
-      await receiptsService.generateReceiptPDF(receipt.id, false);
-      for (const p of candidates) {
-        if (fs.existsSync(p)) {
-          res.setHeader('Content-Type', 'application/pdf');
-          res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-          return res.sendFile(p);
-        }
+    const resolved = await resolveOrRegenerateUpload(filename, subfolder);
+    if (resolved) {
+      res.setHeader('Content-Type', resolved.mimeType);
+      res.setHeader('Content-Disposition', `inline; filename="${resolved.downloadName}"`);
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      if (resolved.filePath && fs.existsSync(resolved.filePath)) {
+        return res.sendFile(resolved.filePath);
+      }
+      if (resolved.buffer) {
+        return res.status(200).send(resolved.buffer);
       }
     }
   } catch (err) {
-    logger.error(`Erreur génération quittance à la volée (${filename}):`, err);
+    logger.error(`Erreur récupération/régénération fichier upload (${filename}):`, err);
   }
 
-  next();
-});
+  return next();
+};
 
-// Gestionnaire dynamique de Factures locatives (Régénération à la volée)
-app.get('/uploads/invoices/:filename', async (req: Request, res: Response, next: NextFunction) => {
-  const filename = req.params.filename;
-  if (!filename.endsWith('.pdf')) return next();
+// Gestionnaire dynamique des sous-dossiers (/uploads/receipts/:filename, /uploads/invoices/:filename, /uploads/contracts/:filename, /uploads/crg/:filename, etc.)
+app.get('/uploads/:subfolder/:filename', (req: Request, res: Response, next: NextFunction) =>
+  serveResolvedUpload(req, res, next, req.params.subfolder)
+);
 
-  const candidates = [
-    path.join(staticUploadsDirTmp, 'invoices', filename),
-    path.join(staticUploadsDirLocal, 'invoices', filename),
-    path.join(os.tmpdir(), filename),
-  ];
-
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-      return res.sendFile(p);
-    }
-  }
-
-  try {
-    const invoiceNumber = filename.replace(/\.pdf$/i, '');
-    const invoice = await prisma.invoice.findFirst({
-      where: {
-        OR: [
-          { invoiceNumber },
-          { pdfUrl: { endsWith: filename } },
-          { pdfUrl: { contains: invoiceNumber } },
-        ],
-      },
-    });
-
-    if (invoice) {
-      await invoicesService.generateInvoicePDF(invoice.id);
-      for (const p of candidates) {
-        if (fs.existsSync(p)) {
-          res.setHeader('Content-Type', 'application/pdf');
-          res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-          return res.sendFile(p);
-        }
-      }
-    }
-  } catch (err) {
-    logger.error(`Erreur génération facture à la volée (${filename}):`, err);
-  }
-
-  next();
-});
-
-// Gestionnaire dynamique de Factures d'Abonnement SaaS Naforo (Régénération à la volée)
-app.get('/uploads/subscription-invoices/:filename', async (req: Request, res: Response, next: NextFunction) => {
-  const filename = req.params.filename;
-  if (!filename.endsWith('.pdf')) return next();
-
-  const candidates = [
-    path.join(staticUploadsDirTmp, 'subscription-invoices', filename),
-    path.join(staticUploadsDirLocal, 'subscription-invoices', filename),
-    path.join(os.tmpdir(), filename),
-  ];
-
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-      return res.sendFile(p);
-    }
-  }
-
-  try {
-    const ref = filename.replace(/\.pdf$/i, '');
-    const payment = await prisma.subscriptionPayment.findFirst({
-      where: {
-        OR: [
-          { paymentReference: ref },
-          { pdfUrl: { endsWith: filename } },
-          { pdfUrl: { contains: ref } },
-        ],
-      },
-      include: {
-        organization: true,
-        subscription: { include: { plan: true } },
-      },
-    });
-
-    if (payment) {
-      const convertedAmounts = await convertAmountXof(Number(payment.amountXof));
-      const docParams = {
-        paymentReference: payment.paymentReference,
-        amountXof: Number(payment.amountXof),
-        paymentMethod: payment.paymentMethod,
-        transactionNumber: payment.transactionNumber,
-        paymentDate: payment.paymentDate,
-        billingCycle: payment.billingCycle || 'monthly',
-        organization: {
-          name: payment.organization?.name || 'Organisation',
-          email: payment.organization?.email || null,
-          phone: payment.organization?.phone || null,
-          address: payment.organization?.address || null,
-          city: payment.organization?.city || null,
-        },
-        subscription: {
-          startDate: payment.subscription?.startDate || payment.paymentDate,
-          endDate: payment.subscription?.endDate || payment.paymentDate,
-          plan: {
-            name: payment.subscription?.plan?.name || 'Plan Naforo',
-            code: payment.subscription?.plan?.code,
-            description: payment.subscription?.plan?.description,
-            maxProperties: payment.subscription?.plan?.maxProperties,
-            maxLots: payment.subscription?.plan?.maxLots,
-            maxTenants: payment.subscription?.plan?.maxTenants,
-            features: payment.subscription?.plan?.features,
-          },
-        },
-      };
-      await generateSubscriptionInvoicePdf(docParams as any, convertedAmounts);
-      for (const p of candidates) {
-        if (fs.existsSync(p)) {
-          res.setHeader('Content-Type', 'application/pdf');
-          res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-          return res.sendFile(p);
-        }
-      }
-    }
-  } catch (err) {
-    logger.error(`Erreur génération facture abonnement à la volée (${filename}):`, err);
-  }
-
-  next();
-});
-
-// Gestionnaire dynamique de Comptes-Rendus de Gestion (CRG)
-app.get('/uploads/crg/:filename', async (req: Request, res: Response, next: NextFunction) => {
-  const filename = req.params.filename;
-  if (!filename.endsWith('.pdf')) return next();
-
-  const candidates = [
-    path.join(staticUploadsDirTmp, 'crg', filename),
-    path.join(staticUploadsDirLocal, 'crg', filename),
-    path.join(os.tmpdir(), filename),
-  ];
-
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-      return res.sendFile(p);
-    }
-  }
-
-  next();
-});
-
-// Gestionnaire dynamique des Contrats de bail certifiés (PDF)
-app.get('/uploads/contracts/:filename', async (req: Request, res: Response, next: NextFunction) => {
-  const filename = req.params.filename;
-  if (!filename.endsWith('.pdf')) return next();
-
-  const candidates = [
-    path.join(staticUploadsDirTmp, 'contracts', filename),
-    path.join(staticUploadsDirLocal, 'contracts', filename),
-    path.join(os.tmpdir(), filename),
-  ];
-
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-      return res.sendFile(p);
-    }
-  }
-
-  next();
-});
+// Gestionnaire dynamique à la racine de /uploads/:filename (Documents GED, Preuves de paiement, Logos, Cachets, PDFs UUID)
+app.get('/uploads/:filename', (req: Request, res: Response, next: NextFunction) =>
+  serveResolvedUpload(req, res, next)
+);
 
 // 6. Mount central router
 app.use(env.API_PREFIX, router);

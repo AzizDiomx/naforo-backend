@@ -86,7 +86,7 @@ export const subscriptionsController = {
     }
 
     const { id } = req.params;
-    const fileUrl = `uploads/${req.file.filename}`;
+    const fileUrl = `/uploads/${req.file.filename}`;
     const payment = await subscriptionsService.uploadProof(id, fileUrl, req.organizationId!);
 
     return sendSuccess(res, payment, 'Justificatif de paiement téléversé avec succès');

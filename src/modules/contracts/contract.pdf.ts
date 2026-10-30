@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 interface ContractPDFData {
   contract: any;
@@ -14,10 +15,15 @@ export function generateContractPDF(data: ContractPDFData): Promise<{ relativePa
   return new Promise((resolve, reject) => {
     const { contract, organization, property, tenant, landlord } = data;
 
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'contracts');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const uploadsDir = isServerless
+      ? path.join(os.tmpdir(), 'uploads', 'contracts')
+      : path.join(process.cwd(), 'uploads', 'contracts');
+    try {
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+    } catch (_) {}
 
     const filename = `BAIL-${contract.contractNumber}.pdf`;
     const absolutePath = path.join(uploadsDir, filename);

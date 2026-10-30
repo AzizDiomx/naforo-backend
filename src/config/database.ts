@@ -41,6 +41,31 @@ export async function testConnection(): Promise<void> {
   try {
     await prisma.$connect();
     logger.info('Database connection established via Prisma Client');
+
+    // Auto-synchronisation idempotente des colonnes et tables critiques en production
+    try {
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS "maxLots" INTEGER NOT NULL DEFAULT 1;
+      `);
+      await prisma.$executeRawUnsafe(`
+        UPDATE subscription_plans SET "maxLots" = 5, "maxProperties" = 25, "maxTenants" = 25 WHERE code = 'pro' AND "maxLots" <= 1;
+      `);
+      await prisma.$executeRawUnsafe(`
+        UPDATE subscription_plans SET "maxLots" = 9999, "maxProperties" = 9999, "maxTenants" = 9999 WHERE code = 'expert' AND "maxLots" <= 1;
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS uploaded_files (
+          filename TEXT PRIMARY KEY,
+          "mimeType" TEXT NOT NULL,
+          "originalName" TEXT,
+          "size" INTEGER,
+          "data" BYTEA NOT NULL,
+          "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+      `);
+    } catch (syncErr) {
+      logger.warn('Auto-sync SQL schema warning (non-blocking):', syncErr);
+    }
   } catch (error) {
     logger.error('Failed to connect to database via Prisma Client', {
       error: error instanceof Error ? error.message : error,
