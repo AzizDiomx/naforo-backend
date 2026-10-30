@@ -17,10 +17,8 @@ async function bootstrap() {
   try {
     // 1. Test database connection
     await testConnection();
-
     // 2. Create HTTP Server
     const server = http.createServer(app);
-
     // 3. Initialize Sockets
     initializeSocket(server);
     logger.info('Socket.IO initialized successfully');
