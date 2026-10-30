@@ -1,6 +1,7 @@
 import { prisma } from '@/config/database';
 import { NotFoundError } from '@/shared/errors/AppError';
 import { Prisma } from '@prisma/client';
+import { LOT_PROPERTY_TYPES } from '@/shared/helpers/plan-policy';
 
 export class DashboardService {
   /**
@@ -89,6 +90,7 @@ export class DashboardService {
 
     // Execute queries in parallel
     const [
+      lotsCount,
       propertiesCount,
       contractsCount,
       expiringContracts,
@@ -98,10 +100,20 @@ export class DashboardService {
       validatedSums,
       lastMonthSums,
     ] = await Promise.all([
-      // 1. Properties status breakdown
+      // 0. Lots count (Immeubles, Résidences, Lots)
+      prisma.property.count({
+        where: {
+          ...propBaseWhere,
+          type: { in: [...LOT_PROPERTY_TYPES] },
+        },
+      }),
+      // 1. Properties (rental units) status breakdown
       prisma.property.groupBy({
         by: ['status'],
-        where: propBaseWhere,
+        where: {
+          ...propBaseWhere,
+          type: { notIn: [...LOT_PROPERTY_TYPES] },
+        },
         _count: { id: true },
       }),
       // 2. Contracts status breakdown
@@ -166,9 +178,10 @@ export class DashboardService {
       }),
     ]);
 
-    // Format properties stats
+    // Format properties stats (rental units distinct from lots)
     const properties = {
       total: propertiesCount.reduce((a, c) => a + c._count.id, 0),
+      lotsCount,
       available: propertiesCount.find((p) => p.status === 'available')?._count.id || 0,
       occupied: propertiesCount.find((p) => p.status === 'occupied')?._count.id || 0,
       maintenance: propertiesCount.find((p) => p.status === 'maintenance')?._count.id || 0,

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '@/config/database';
 import { ForbiddenError } from '@/shared/errors/AppError';
+import { getOrganizationPlanContext, planIncludesFeature } from '@/shared/helpers/plan-policy';
 
 export async function checkSubscription(req: Request, res: Response, next: NextFunction) {
   // 1. Ignorer les requêtes hors organisation (super_admin global, routes d'auth initiales...)
@@ -72,48 +73,20 @@ export async function checkSubscription(req: Request, res: Response, next: NextF
  * Récupère le plan et les fonctionnalités actives d'une organisation
  */
 export async function getOrganizationSubscriptionFeatures(organizationId: string) {
-  const activeSub = await prisma.subscription.findFirst({
-    where: { organizationId, status: 'active' },
-    include: { plan: true },
-    orderBy: { endDate: 'desc' },
+  const ctx = await getOrganizationPlanContext(organizationId);
+  const org = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { id: true, name: true, plan: true, phone: true, email: true },
   });
 
-  let plan = activeSub?.plan;
-  let org = null;
-  if (!plan) {
-    org = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      select: { id: true, name: true, plan: true, phone: true, email: true },
-    });
-    const planCode = org?.plan || 'starter';
-    plan = (await prisma.subscriptionPlan.findUnique({ where: { code: planCode } })) || undefined;
-  } else {
-    org = await prisma.organization.findUnique({
-      where: { id: organizationId },
-      select: { id: true, name: true, plan: true, phone: true, email: true },
-    });
-  }
-
-  let features: string[] = [];
-  if (plan?.features) {
-    try {
-      features = typeof plan.features === 'string'
-        ? JSON.parse(plan.features)
-        : (plan.features as string[]) || [];
-    } catch {
-      features = [];
-    }
-  }
-
-  const planCode = (plan?.code || org?.plan || 'starter').toLowerCase();
-  const hasChat = features.includes('chat_encrypted') || planCode.includes('pro') || planCode.includes('expert');
+  const hasChat = planIncludesFeature(ctx.planCode, ctx.features, 'chat_encrypted');
 
   return {
     organizationId,
     organizationName: org?.name || 'Organisation',
-    planCode,
-    planName: plan?.name || 'Starter',
-    features,
+    planCode: ctx.planCode,
+    planName: ctx.planName,
+    features: ctx.features,
     hasChat,
   };
 }
@@ -140,14 +113,22 @@ export function requirePlanFeature(featureCode: string, featureLabel: string) {
     if (req.user && req.user.role === 'super_admin') return next();
 
     try {
-      const { planName, planCode, features, hasChat } = await getOrganizationSubscriptionFeatures(orgId);
+      const { planName, planCode, features } = await getOrganizationSubscriptionFeatures(orgId);
 
-      const hasFeature = featureCode === 'chat_encrypted' ? hasChat : features.includes(featureCode);
+      const hasFeature = planIncludesFeature(planCode, features, featureCode);
 
       if (!hasFeature) {
-        throw new ForbiddenError(
+        const err = new ForbiddenError(
           `La fonctionnalité "${featureLabel}" n'est pas incluse dans votre formule actuelle (${planName}). Veuillez surclasser votre abonnement pour débloquer cet outil.`
         );
+        (err as any).code = 'FEATURE_NOT_INCLUDED';
+        (err as any).errors = {
+          featureRequired: featureCode,
+          featureLabel,
+          currentPlanCode: planCode,
+          currentPlanName: planName,
+        };
+        throw err;
       }
 
       next();

@@ -1,6 +1,7 @@
 import { prisma } from '@/config/database';
 import { Organization, Prisma } from '@prisma/client';
 import { PaginationQuery } from '@/shared/types';
+import { LOT_PROPERTY_TYPES } from '@/shared/helpers/plan-policy';
 
 export class OrganizationsRepository {
   async findAll(options: PaginationQuery): Promise<{ organizations: any[]; total: number }> {
@@ -103,8 +104,12 @@ export class OrganizationsRepository {
   }
 
   async getStats(id: string): Promise<any> {
+    const unitTypesFilter = { notIn: [...LOT_PROPERTY_TYPES] };
+    const lotTypesFilter = { in: [...LOT_PROPERTY_TYPES] };
+
     const [
       users,
+      lotsTotal,
       propertiesTotal,
       propertiesAvailable,
       propertiesOccupied,
@@ -120,10 +125,11 @@ export class OrganizationsRepository {
       activeSub,
     ] = await Promise.all([
       prisma.user.count({ where: { organizationId: id, isActive: true } }),
-      prisma.property.count({ where: { organizationId: id } }),
-      prisma.property.count({ where: { organizationId: id, status: 'available' } }),
-      prisma.property.count({ where: { organizationId: id, status: 'occupied' } }),
-      prisma.property.count({ where: { organizationId: id, status: 'maintenance' } }),
+      prisma.property.count({ where: { organizationId: id, type: lotTypesFilter } }),
+      prisma.property.count({ where: { organizationId: id, type: unitTypesFilter } }),
+      prisma.property.count({ where: { organizationId: id, type: unitTypesFilter, status: 'available' } }),
+      prisma.property.count({ where: { organizationId: id, type: unitTypesFilter, status: 'occupied' } }),
+      prisma.property.count({ where: { organizationId: id, type: unitTypesFilter, status: 'maintenance' } }),
       prisma.contract.count({ where: { organizationId: id } }),
       prisma.contract.count({ where: { organizationId: id, status: 'active' } }),
       prisma.tenantProfile.count({ where: { organizationId: id } }),
@@ -158,8 +164,10 @@ export class OrganizationsRepository {
 
     return {
       users,
+      lots: lotsTotal,
       properties: {
         total: propertiesTotal,
+        lots: lotsTotal,
         available: propertiesAvailable,
         occupied: propertiesOccupied,
         maintenance: propertiesMaintenance,

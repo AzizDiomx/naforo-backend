@@ -6,6 +6,7 @@ import { authorize } from '@/shared/middlewares/rbac.middleware';
 import { requireTenant } from '@/shared/middlewares/tenant.middleware';
 import { uploadMultiple } from '@/shared/middlewares/upload.middleware';
 import { auditLog } from '@/shared/middlewares/audit.middleware';
+import { checkSubscription, requirePlanFeature } from '@/shared/middlewares/subscription.middleware';
 import { 
   CreateIncidentSchema, 
   UpdateIncidentSchema, 
@@ -19,6 +20,7 @@ const router = Router();
 
 router.use(authenticate);
 router.use(requireTenant);
+router.use(checkSubscription);
 
 router.get(
   '/', 
@@ -35,6 +37,7 @@ router.get(
 router.post(
   '/:id/quote',
   authorize('admin', 'manager', 'owner', 'technician'),
+  requirePlanFeature('expense_workflow', 'Circuit de validation des dépenses & travaux'),
   validate(SubmitQuoteSchema),
   auditLog('SUBMIT_INCIDENT_QUOTE', 'Incident'),
   incidentsController.submitQuote
@@ -43,6 +46,7 @@ router.post(
 router.post(
   '/:id/approve-expense',
   authorize('admin', 'owner'),
+  requirePlanFeature('expense_workflow', 'Circuit de validation des dépenses & travaux'),
   validate(ApproveExpenseSchema),
   auditLog('APPROVE_INCIDENT_EXPENSE', 'Incident'),
   incidentsController.approveExpense
@@ -51,6 +55,7 @@ router.post(
 router.post(
   '/:id/pay-expense',
   authorize('admin', 'owner', 'accountant'),
+  requirePlanFeature('expense_workflow', 'Circuit de validation des dépenses & travaux'),
   validate(PayExpenseSchema),
   auditLog('PAY_INCIDENT_EXPENSE', 'Incident'),
   incidentsController.payExpense

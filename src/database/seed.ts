@@ -1,10 +1,11 @@
-﻿import * as bcrypt from 'bcryptjs';
+import * as bcrypt from 'bcryptjs';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
 import { prisma } from '@/config/database';
 import { logger } from '@/config/logger';
+import { DEFAULT_PLAN_FEATURES, computeStarterTrialEnd } from '@/shared/helpers/plan-policy';
 
 async function seed(): Promise<void> {
   console.log('🌱 Naforo Database Seeder (Prisma)');
@@ -28,49 +29,33 @@ async function seed(): Promise<void> {
       {
         code: 'starter',
         name: 'Starter',
-        description: 'Formule Gratuite — Idéale pour démarrer (1 à 2 logements)',
+        description: 'Formule Découverte (Essai 3 mois) — Idéale pour démarrer (1 lot, jusqu\'à 2 biens)',
         priceMonthlyXof: 0,
         maxProperties: 2,
+        maxLots: 1,
         maxTenants: 2,
-        features: JSON.stringify([
-          'Suivi jusqu\'à 2 logements',
-          'Relances Email automatiques',
-          'Quittances PDF standard',
-          'Support communautaire'
-        ])
+        features: JSON.stringify(DEFAULT_PLAN_FEATURES.starter),
       },
       {
         code: 'pro',
         name: 'Pro / Sérénité',
-        description: 'Formule Recommandée — Jusqu\'à 15 biens immobiliers',
+        description: 'Formule Recommandée — Jusqu\'à 5 lots et 15 biens immobiliers',
         priceMonthlyXof: 19900,
         maxProperties: 15,
+        maxLots: 5,
         maxTenants: 15,
-        features: JSON.stringify([
-          'Gestion jusqu\'à 15 logements',
-          'Relances SMS & WhatsApp automatiques',
-          'Encaissements Mobile Money (Wave, Orange, MTN, Moov)',
-          'Quittances certifiées par QR Code infalsifiable',
-          'Tchat locataire chiffré AES-256',
-          'Coffre-fort GED & Exports comptables Excel'
-        ])
+        features: JSON.stringify(DEFAULT_PLAN_FEATURES.pro),
       },
       {
         code: 'expert',
         name: 'Expert / Agence',
-        description: 'Multi-Parcs & Agences Immobilières (Biens illimités)',
+        description: 'Multi-Parcs & Agences Immobilières (Lots, biens & locataires illimités)',
         priceMonthlyXof: 64900,
         maxProperties: 9999,
+        maxLots: 9999,
         maxTenants: 9999,
-        features: JSON.stringify([
-          'Logements & locataires illimités',
-          'Multi-gestionnaires & permissions RBAC',
-          'Gestion des mandats de gérance agence',
-          'Exports comptables avancés DGI & bilans',
-          'API d\'intégration & Webhooks',
-          'Gestionnaire de compte dédié & SLA 99.9%'
-        ])
-      }
+        features: JSON.stringify(DEFAULT_PLAN_FEATURES.expert),
+      },
     ];
 
     const seededPlans: Record<string, any> = {};
@@ -81,7 +66,7 @@ async function seed(): Promise<void> {
         create: planItem
       });
       seededPlans[planItem.code] = plan;
-      console.log(`     ✅ Plan "${plan.name}" (Code: ${plan.code}) - ${plan.priceMonthlyXof} FCFA / m (Max Biens: ${plan.maxProperties})`);
+      console.log(`     ✅ Plan "${plan.name}" (Code: ${plan.code}) - ${plan.priceMonthlyXof} FCFA / m (Max Lots: ${plan.maxLots}, Max Biens: ${plan.maxProperties})`);
     }
 
     // 2. Create or get demo organization

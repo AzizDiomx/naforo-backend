@@ -8,6 +8,7 @@ export const CreatePlanSchema = z.object({
     priceMonthlyXof: z.number().nonnegative('Le prix doit être positif ou nul'),
     yearlyDiscountPercent: z.number().int().min(0).max(100).default(20),
     maxProperties: z.number().int().nonnegative('La limite de biens doit être positive ou nulle'),
+    maxLots: z.number().int().nonnegative('La limite de lots doit être positive ou nulle').default(1),
     maxTenants: z.number().int().nonnegative('La limite de locataires doit être positive ou nulle'),
     features: z.array(z.string()).default([]),
     isRecommended: z.boolean().default(false),

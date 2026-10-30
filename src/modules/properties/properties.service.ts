@@ -4,6 +4,7 @@ import { NotFoundError, BadRequestError, ConflictError } from '@/shared/errors/A
 import { Property } from '@prisma/client';
 import { PaginationQuery, PaginationMeta } from '@/shared/types';
 import { buildPaginationMeta } from '@/shared/helpers/pagination';
+import { getOrganizationPlanContext, isLotType, LOT_PROPERTY_TYPES } from '@/shared/helpers/plan-policy';
 
 export class PropertiesService {
   async getAllProperties(
@@ -28,27 +29,63 @@ export class PropertiesService {
     return propertiesRepository.findAvailable(organizationId);
   }
 
-  async createProperty(data: any, organizationId: string, createdBy: string): Promise<Property> {
-    // 1. Contrôle du quota d'abonnement
-    let activeSub = await prisma.subscription.findFirst({
-      where: { organizationId },
-      include: { plan: true },
-      orderBy: { endDate: 'desc' },
+  /**
+   * Contrôle le quota du forfait en distinguant LOTS (immeubles/résidences/ensembles)
+   * et BIENS (unités locatives). Chaque catégorie possède sa propre limite.
+   */
+  private async assertQuota(organizationId: string, type: string, excludePropertyId?: string): Promise<void> {
+    const { plan } = await getOrganizationPlanContext(organizationId);
+    if (!plan) return;
+
+    const lot = isLotType(type);
+    const used = await prisma.property.count({
+      where: {
+        organizationId,
+        ...(excludePropertyId ? { id: { not: excludePropertyId } } : {}),
+        type: lot ? { in: [...LOT_PROPERTY_TYPES] } : { notIn: [...LOT_PROPERTY_TYPES] },
+      },
     });
+    const max = lot ? plan.maxLots : plan.maxProperties;
 
-    let plan = activeSub?.plan;
-    if (!plan) {
-      plan = await prisma.subscriptionPlan.findUnique({ where: { code: 'starter' } }) || undefined;
+    if (used >= max) {
+      throw new BadRequestError(
+        lot
+          ? `Vous avez atteint la limite de lots autorisée par votre forfait ${plan.name} (${used}/${max} lots). Veuillez surclasser votre abonnement pour créer de nouveaux lots.`
+          : `Vous avez atteint la limite de biens autorisée par votre forfait ${plan.name} (${used}/${max} biens). Veuillez surclasser votre abonnement.`,
+        [{ field: 'type', message: lot ? `Quota de lots atteint (${used}/${max}).` : `Quota de biens atteint (${used}/${max}).` }]
+      );
+    }
+  }
+
+  /** Valide la cohérence lot / bien : un bien se rattache à un lot, un lot ne s'imbrique pas. */
+  private async assertHierarchy(type: string, parentId: string | null | undefined, organizationId: string, selfId?: string): Promise<void> {
+    if (!parentId) return;
+
+    if (selfId && parentId === selfId) {
+      throw new BadRequestError('Un bien ne peut pas être son propre parent.');
     }
 
-    if (plan) {
-      const propertyCount = await prisma.property.count({ where: { organizationId } });
-      if (propertyCount >= plan.maxProperties) {
-        throw new BadRequestError(
-          `Vous avez atteint la limite de biens autorisée par votre forfait (${propertyCount}/${plan.maxProperties} biens). Veuillez surclasser votre abonnement.`
-        );
-      }
+    const parent = await propertiesRepository.findById(parentId, organizationId);
+    if (!parent) {
+      throw new BadRequestError('Le lot parent spécifié est invalide ou n\'appartient pas à votre organisation.');
     }
+
+    if (isLotType(type)) {
+      throw new BadRequestError('Un lot ne peut pas être rattaché à un autre lot. Seuls les biens (appartements, villas, boutiques...) se rattachent à un lot.', [
+        { field: 'parentId', message: 'Un lot ne peut pas être imbriqué dans un autre lot.' },
+      ]);
+    }
+
+    if (!isLotType((parent as any).type) && !(parent as any).children?.length) {
+      throw new BadRequestError('Le parent sélectionné n\'est pas un lot. Créez d\'abord un lot (immeuble, résidence, ensemble) pour y rattacher vos biens.', [
+        { field: 'parentId', message: 'Le parent doit être un lot (immeuble, résidence ou ensemble).' },
+      ]);
+    }
+  }
+
+  async createProperty(data: any, organizationId: string, createdBy: string): Promise<Property> {
+    // 1. Contrôle du quota d'abonnement (lots et biens distincts)
+    await this.assertQuota(organizationId, data.type);
 
     // 2. Unicité stricte du libellé par organisation (Formule A)
     const normalizedName = String(data.name || '').trim();
@@ -70,13 +107,8 @@ export class PropertiesService {
       }
     }
 
-    // If parentId provided, verify it exists and belongs to the same org
-    if (data.parentId) {
-      const parent = await propertiesRepository.findById(data.parentId, organizationId);
-      if (!parent) {
-        throw new BadRequestError('Le bien parent spécifié est invalide ou n\'appartient pas à votre organisation.');
-      }
-    }
+    // Vérifier la cohérence lot / bien du parent
+    await this.assertHierarchy(data.type, data.parentId, organizationId);
 
     return propertiesRepository.create({
       ...data,
@@ -87,7 +119,7 @@ export class PropertiesService {
   }
 
   async updateProperty(id: string, data: any, organizationId: string): Promise<Property> {
-    await this.getPropertyById(id, organizationId);
+    const existing: any = await this.getPropertyById(id, organizationId);
 
     // Unicité stricte du libellé par organisation lors de la modification (Formule A)
     if (data.name) {
@@ -111,12 +143,27 @@ export class PropertiesService {
       data.name = normalizedName;
     }
 
-    if (data.parentId) {
-      const parent = await propertiesRepository.findById(data.parentId, organizationId);
-      if (!parent) {
-        throw new BadRequestError('Le bien parent spécifié est invalide.');
+    // Changement de catégorie (bien <-> lot) : contrôle des quotas et de la cohérence de la hiérarchie
+    const targetType: string = data.type ?? existing.type;
+    const targetParentId: string | null | undefined = data.parentId !== undefined ? data.parentId : existing.parentId;
+    const categoryChanged = isLotType(targetType) !== isLotType(existing.type);
+
+    if (categoryChanged) {
+      await this.assertQuota(organizationId, targetType, id);
+
+      if (!isLotType(targetType) && existing.children?.length > 0) {
+        throw new BadRequestError('Ce lot contient des biens. Détachez ou déplacez ses biens avant de le convertir en bien individuel.');
+      }
+
+      if (isLotType(targetType)) {
+        const activeContracts = await prisma.contract.count({ where: { propertyId: id, status: 'active' } });
+        if (activeContracts > 0) {
+          throw new BadRequestError('Ce bien est actuellement loué (bail actif) : il ne peut pas être converti en lot.');
+        }
       }
     }
+
+    await this.assertHierarchy(targetType, targetParentId, organizationId, id);
 
     return propertiesRepository.update(id, data);
   }

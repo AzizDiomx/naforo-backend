@@ -9,6 +9,7 @@ import { sendMail } from '@/config/mailer';
 import { logger } from '@/config/logger';
 import { PaginationQuery, PaginationMeta } from '@/shared/types';
 import { buildPaginationMeta } from '@/shared/helpers/pagination';
+import { getOrganizationPlanContext, planIncludesFeature } from '@/shared/helpers/plan-policy';
 
 export class UsersService {
   async getAllUsers(
@@ -31,22 +32,8 @@ export class UsersService {
   async createUser(data: any, organizationId: string): Promise<User> {
     // Contrôle du multi-utilisateurs selon l'abonnement (rôles staff/gestion)
     if (data.role !== 'tenant') {
-      const activeSub = await prisma.subscription.findFirst({
-        where: { organizationId },
-        include: { plan: true },
-        orderBy: { endDate: 'desc' },
-      });
-
-      let features: string[] = [];
-      try {
-        features = typeof activeSub?.plan.features === 'string'
-          ? JSON.parse(activeSub.plan.features)
-          : (activeSub?.plan.features as string[]) || [];
-      } catch {
-        features = [];
-      }
-
-      const hasMultiUsers = features.includes('multi_users') || activeSub?.plan.code === 'expert';
+      const ctx = await getOrganizationPlanContext(organizationId);
+      const hasMultiUsers = planIncludesFeature(ctx.planCode, ctx.features, 'multi_users');
       if (!hasMultiUsers) {
         const staffCount = await prisma.user.count({
           where: {
@@ -55,10 +42,10 @@ export class UsersService {
           },
         });
 
-        const maxStaff = activeSub?.plan.code === 'pro' ? 2 : 1;
+        const maxStaff = ctx.planCode.includes('pro') ? 2 : 1;
         if (staffCount >= maxStaff) {
           throw new ForbiddenError(
-            `La création de collaborateurs supplémentaires requiert la formule Expert / Agence (Option Multi-Gestionnaires). Votre formule actuelle (${activeSub?.plan.name || 'Starter'}) est limitée à ${maxStaff} accès gestionnaire.`
+            `La création de collaborateurs supplémentaires requiert la formule Expert / Agence (Option Multi-Gestionnaires). Votre formule actuelle (${ctx.planName}) est limitée à ${maxStaff} accès gestionnaire.`
           );
         }
       }
@@ -249,22 +236,8 @@ export class UsersService {
   }
 
   async createManager(organizationId: string, data: any): Promise<any> {
-    const activeSub = await prisma.subscription.findFirst({
-      where: { organizationId },
-      include: { plan: true },
-      orderBy: { endDate: 'desc' },
-    });
-
-    let features: string[] = [];
-    try {
-      features = typeof activeSub?.plan.features === 'string'
-        ? JSON.parse(activeSub.plan.features)
-        : (activeSub?.plan.features as string[]) || [];
-    } catch {
-      features = [];
-    }
-
-    const hasMultiUsers = features.includes('multi_users') || activeSub?.plan.code === 'expert';
+    const ctx = await getOrganizationPlanContext(organizationId);
+    const hasMultiUsers = planIncludesFeature(ctx.planCode, ctx.features, 'multi_users');
     if (!hasMultiUsers) {
       const staffCount = await prisma.user.count({
         where: {
@@ -273,10 +246,10 @@ export class UsersService {
         },
       });
 
-      const maxStaff = activeSub?.plan.code === 'pro' ? 2 : 1;
+      const maxStaff = ctx.planCode.includes('pro') ? 2 : 1;
       if (staffCount >= maxStaff) {
         throw new ForbiddenError(
-          `La création de collaborateurs supplémentaires requiert la formule Expert / Entreprise (Option Multi-Gestionnaires). Votre formule actuelle (${activeSub?.plan.name || 'Starter'}) est limitée à ${maxStaff} accès gestionnaire.`
+          `La création de collaborateurs supplémentaires requiert la formule Expert / Entreprise (Option Multi-Gestionnaires). Votre formule actuelle (${ctx.planName}) est limitée à ${maxStaff} accès gestionnaire.`
         );
       }
     }

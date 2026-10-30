@@ -1,6 +1,7 @@
 import { prisma } from '@/config/database';
 import { Property, Prisma } from '@prisma/client';
 import { PaginationQuery } from '@/shared/types';
+import { LOT_PROPERTY_TYPES } from '@/shared/helpers/plan-policy';
 
 export class PropertiesRepository {
   async findAll(
@@ -166,10 +167,10 @@ export class PropertiesRepository {
     const andConditions: Prisma.PropertyWhereInput[] = [
       { organizationId },
       {
+        // Un LOT = type regroupement (immeuble, résidence, lot) OU tout bien contenant des sous-unités
         OR: [
-          { type: { in: ['building', 'residence', 'villa', 'lot'] } },
+          { type: { in: [...LOT_PROPERTY_TYPES] } },
           { children: { some: {} } },
-          { parentId: null },
         ],
       },
     ];
@@ -233,9 +234,8 @@ export class PropertiesRepository {
       organizationId,
       ...(lotId ? { id: lotId } : {
         OR: [
-          { type: { in: ['building', 'residence', 'villa', 'lot'] } },
+          { type: { in: [...LOT_PROPERTY_TYPES] } },
           { children: { some: {} } },
-          { parentId: null },
         ],
       }),
     };
@@ -280,7 +280,7 @@ export class PropertiesRepository {
         organizationId,
         parentId: null,
         children: { none: {} },
-        type: { notIn: ['building', 'residence', 'lot'] },
+        type: { notIn: [...LOT_PROPERTY_TYPES] },
       },
       include: {
         contracts: {
@@ -472,10 +472,13 @@ export class PropertiesRepository {
   }
 
   async findAvailable(organizationId: string): Promise<Property[]> {
+    // Seuls les BIENS (unités louables) peuvent faire l'objet d'un bail ; les lots sont exclus
     return prisma.property.findMany({
       where: {
         organizationId,
         status: 'available',
+        type: { notIn: [...LOT_PROPERTY_TYPES] },
+        children: { none: {} },
       },
       orderBy: { name: 'asc' },
     });
@@ -501,11 +504,18 @@ export class PropertiesRepository {
   }
 
   async getStats(organizationId: string): Promise<any> {
-    const [total, available, occupied, maintenance] = await Promise.all([
-      prisma.property.count({ where: { organizationId } }),
-      prisma.property.count({ where: { organizationId, status: 'available' } }),
-      prisma.property.count({ where: { organizationId, status: 'occupied' } }),
-      prisma.property.count({ where: { organizationId, status: 'maintenance' } }),
+    // Les LOTS (regroupements) sont comptés à part : seuls les BIENS (unités locatives) entrent dans les KPI d'occupation
+    const unitWhere: Prisma.PropertyWhereInput = {
+      organizationId,
+      type: { notIn: [...LOT_PROPERTY_TYPES] },
+    };
+
+    const [total, available, occupied, maintenance, lotsCount] = await Promise.all([
+      prisma.property.count({ where: unitWhere }),
+      prisma.property.count({ where: { ...unitWhere, status: 'available' } }),
+      prisma.property.count({ where: { ...unitWhere, status: 'occupied' } }),
+      prisma.property.count({ where: { ...unitWhere, status: 'maintenance' } }),
+      prisma.property.count({ where: { organizationId, type: { in: [...LOT_PROPERTY_TYPES] } } }),
     ]);
 
     const countsByType = await prisma.property.groupBy({
@@ -519,6 +529,7 @@ export class PropertiesRepository {
       available,
       occupied,
       maintenance,
+      lotsCount,
       byType: countsByType.reduce((acc: any, curr) => {
         acc[curr.type] = curr._count.id;
         return acc;

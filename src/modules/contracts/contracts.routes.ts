@@ -13,7 +13,7 @@ import {
   SignOtpSchema,
 } from './contracts.schema';
 
-import { checkSubscription } from '@/shared/middlewares/subscription.middleware';
+import { checkSubscription, requirePlanFeature } from '@/shared/middlewares/subscription.middleware';
 
 const router = Router();
 
@@ -78,6 +78,7 @@ router.get(
 router.post(
   '/:id/send-otp',
   authorize('admin', 'manager', 'owner'),
+  requirePlanFeature('e_signature', 'Signature électronique OTP des baux'),
   validate(SendOtpSchema),
   auditLog('SEND_SIGNATURE_OTP', 'Contract'),
   contractsController.sendSignatureOtp
@@ -86,6 +87,7 @@ router.post(
 router.post(
   '/:id/sign-otp',
   authorize('admin', 'manager', 'owner', 'tenant'),
+  requirePlanFeature('e_signature', 'Signature électronique OTP des baux'),
   validate(SignOtpSchema),
   auditLog('SIGN_CONTRACT_OTP', 'Contract'),
   contractsController.signContractWithOtp

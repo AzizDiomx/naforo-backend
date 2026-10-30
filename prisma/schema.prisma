@@ -547,7 +547,8 @@ model SubscriptionPlan {
   description           String?
   priceMonthlyXof       Decimal        @db.Decimal(15, 2)
   yearlyDiscountPercent Int            @default(20) // Pourcentage de remise annuelle (ex: 20%)
-  maxProperties         Int            // Quota: Nombre max de biens (ex: 2, 15, 9999)
+  maxProperties         Int            // Quota: Nombre max de biens/logements (unités locatives, hors lots)
+  maxLots               Int            @default(1) // Quota: Nombre max de lots (immeubles, résidences, ensembles regroupant des biens)
   maxTenants            Int            // Quota: Nombre max de locataires (ex: 2, 15, 9999)
   features              Json           // Tableau JSON des fonctionnalités clés incluses
   isRecommended         Boolean        @default(false) // Badge "Formule Recommandée"

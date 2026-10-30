@@ -12,7 +12,7 @@ import {
   UpdatePropertyStatusSchema,
 } from './properties.schema';
 
-import { checkSubscription } from '@/shared/middlewares/subscription.middleware';
+import { checkSubscription, requirePlanFeature } from '@/shared/middlewares/subscription.middleware';
 
 const router = Router();
 
@@ -47,6 +47,7 @@ router.get(
 router.get(
   '/statistics/advanced', 
   authorize('admin', 'manager', 'owner'), 
+  requirePlanFeature('advanced_stats', 'Statistiques avancées par lot & bien'),
   propertiesController.getAdvancedLotStatistics
 );
 

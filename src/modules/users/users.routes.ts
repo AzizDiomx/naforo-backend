@@ -5,6 +5,7 @@ import { authenticate } from '@/shared/middlewares/auth.middleware';
 import { authorize } from '@/shared/middlewares/rbac.middleware';
 import { requireTenant } from '@/shared/middlewares/tenant.middleware';
 import { auditLog } from '@/shared/middlewares/audit.middleware';
+import { checkSubscription, requirePlanFeature } from '@/shared/middlewares/subscription.middleware';
 import { CreateUserSchema, UpdateUserSchema, UpdateFCMTokenSchema, CreateManagerSchema, UpdatePortfolioSchema } from './users.schema';
 
 const router = Router();
@@ -12,6 +13,7 @@ const router = Router();
 // Apply authentication and tenant isolation to all user routes
 router.use(authenticate);
 router.use(requireTenant);
+router.use(checkSubscription);
 
 // Dedicated manager & portfolio routes (Must be placed before /:id)
 router.get(
@@ -23,6 +25,7 @@ router.get(
 router.post(
   '/managers',
   authorize('admin', 'owner'),
+  requirePlanFeature('multi_users', 'Gestion des gérants & portefeuilles cloisonnés'),
   validate(CreateManagerSchema),
   auditLog('CREATE_MANAGER', 'User'),
   usersController.createManager
@@ -31,6 +34,7 @@ router.post(
 router.put(
   '/managers/:id/portfolio',
   authorize('admin', 'owner'),
+  requirePlanFeature('managers_portfolio', 'Portefeuilles cloisonnés par gérant'),
   validate(UpdatePortfolioSchema),
   auditLog('UPDATE_MANAGER_PORTFOLIO', 'User'),
   usersController.updateManagerPortfolio

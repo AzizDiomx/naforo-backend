@@ -296,6 +296,7 @@ app.get('/uploads/subscription-invoices/:filename', async (req: Request, res: Re
             code: payment.subscription?.plan?.code,
             description: payment.subscription?.plan?.description,
             maxProperties: payment.subscription?.plan?.maxProperties,
+            maxLots: payment.subscription?.plan?.maxLots,
             maxTenants: payment.subscription?.plan?.maxTenants,
             features: payment.subscription?.plan?.features,
           },

@@ -5,6 +5,7 @@ import { authenticate } from '@/shared/middlewares/auth.middleware';
 import { authorize } from '@/shared/middlewares/rbac.middleware';
 import { auditLog } from '@/shared/middlewares/audit.middleware';
 import { uploadSingle } from '@/shared/middlewares/upload.middleware';
+import { checkSubscription, requirePlanFeature } from '@/shared/middlewares/subscription.middleware';
 import { CreateOrganizationSchema, UpdateOrganizationSchema, UpdateBrandingSchema } from './organizations.schema';
 
 const router = Router();
@@ -75,6 +76,8 @@ router.get(
 router.put(
   '/:id/branding',
   authorize('super_admin', 'admin', 'owner'),
+  checkSubscription,
+  requirePlanFeature('white_label', 'Marque Blanche Agence'),
   validate(UpdateBrandingSchema),
   auditLog('UPDATE_ORGANIZATION_BRANDING', 'Organization'),
   orgsController.updateBranding
@@ -83,6 +86,8 @@ router.put(
 router.post(
   '/:id/stamp',
   authorize('super_admin', 'admin', 'owner'),
+  checkSubscription,
+  requirePlanFeature('white_label', 'Marque Blanche Agence'),
   uploadSingle('stamp'),
   auditLog('UPLOAD_AGENCY_STAMP', 'Organization'),
   orgsController.uploadStamp
@@ -91,6 +96,8 @@ router.post(
 router.post(
   '/:id/logo',
   authorize('super_admin', 'admin', 'owner'),
+  checkSubscription,
+  requirePlanFeature('white_label', 'Marque Blanche Agence'),
   uploadSingle('logo'),
   auditLog('UPLOAD_AGENCY_LOGO', 'Organization'),
   orgsController.uploadLogo

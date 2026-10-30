@@ -5,12 +5,15 @@ import { authenticate } from '@/shared/middlewares/auth.middleware';
 import { authorize } from '@/shared/middlewares/rbac.middleware';
 import { requireTenant } from '@/shared/middlewares/tenant.middleware';
 import { auditLog } from '@/shared/middlewares/audit.middleware';
+import { checkSubscription, requirePlanFeature } from '@/shared/middlewares/subscription.middleware';
 import { GenerateReportSchema, GenerateAllReportsSchema, UpdateReportStatusSchema } from './management-reports.schema';
 
 const router = Router();
 
 router.use(authenticate);
 router.use(requireTenant);
+router.use(checkSubscription);
+router.use(requirePlanFeature('landlords_crg', 'Comptes-Rendus de Gestion (CRG)'));
 
 router.get(
   '/',

@@ -27,6 +27,7 @@ export interface SubscriptionInvoicePdfParams {
       code?: string;
       description?: string | null;
       maxProperties?: number | null;
+      maxLots?: number | null;
       maxTenants?: number | null;
       features?: any;
     };
@@ -172,10 +173,11 @@ export async function generateSubscriptionInvoicePdf(
 
   // Quotas text
   const maxProps = payment.subscription.plan.maxProperties;
+  const maxLots = payment.subscription.plan.maxLots;
   const maxTenants = payment.subscription.plan.maxTenants;
   const quotaText = maxProps && maxProps > 500
-    ? 'Biens & locataires illimités'
-    : `Jusqu'à ${maxProps || 15} biens et ${maxTenants || 15} locataires gérés`;
+    ? 'Lots, biens & locataires illimités'
+    : `Jusqu'à ${maxLots || 5} lots, ${maxProps || 15} biens et ${maxTenants || 15} locataires gérés`;
 
   doc.fillColor(accentEmerald).font('Helvetica-Bold').fontSize(8);
   doc.text(`✓ Quotas : ${quotaText}`, 52, rowY + 26);

@@ -10,6 +10,13 @@ import path from 'path';
 import { sendMail, subscriptionPaymentApproved } from '@/config/mailer';
 import { formatCurrency, formatDate } from '@/shared/helpers/date';
 import { env } from '@/config/env';
+import {
+  STARTER_TRIAL_MONTHS,
+  DEFAULT_PLAN_FEATURES,
+  DEFAULT_PLAN_QUOTAS,
+  computeStarterTrialEnd,
+  getOrganizationUsage,
+} from '@/shared/helpers/plan-policy';
 
 export class SubscriptionsService {
 
@@ -21,6 +28,7 @@ export class SubscriptionsService {
     priceMonthlyXof: number;
     yearlyDiscountPercent?: number;
     maxProperties: number;
+    maxLots?: number;
     maxTenants: number;
     features: string[];
     isRecommended?: boolean;
@@ -54,6 +62,7 @@ export class SubscriptionsService {
     priceMonthlyXof?: number;
     yearlyDiscountPercent?: number;
     maxProperties?: number;
+    maxLots?: number;
     maxTenants?: number;
     features?: string[];
     isRecommended?: boolean;
@@ -245,11 +254,17 @@ export class SubscriptionsService {
       };
     }
 
-    // Calcul de la consommation actuelle des quotas de l'organisation
-    const [propertyCount, tenantCount] = await Promise.all([
-      prisma.property.count({ where: { organizationId } }),
-      prisma.tenantProfile.count({ where: { organizationId, isActive: true } }),
-    ]);
+    // Calcul de la consommation actuelle des quotas de l'organisation (lots et biens distincts)
+    const usage = await getOrganizationUsage(organizationId);
+    const propertyCount = usage.properties;
+    const lotCount = usage.lots;
+    const tenantCount = usage.tenants;
+
+    // Durée totale de la période d'essai Starter (3 mois calendaires), calculée depuis les dates réelles
+    const trialDaysTotal = Math.max(
+      1,
+      Math.round((endDate.getTime() - new Date(subscription.startDate).getTime()) / (1000 * 60 * 60 * 24))
+    );
 
     // Décoder les fonctionnalités (tableau stocké sous forme de chaîne JSON)
     let featuresList: string[] = [];
@@ -272,7 +287,8 @@ export class SubscriptionsService {
       isExpired,
       isTrialExpired,
       isStarterTrialExpired: isTrialExpired,
-      starterTrialDaysTotal: 60,
+      starterTrialDaysTotal: trialDaysTotal,
+      starterTrialMonths: STARTER_TRIAL_MONTHS,
       starterTrialDaysLeft: isStarter ? Math.max(0, daysRemaining) : null,
       isSuspended,
       isDeactivated,
@@ -294,6 +310,11 @@ export class SubscriptionsService {
           used: propertyCount,
           max: subscription.plan.maxProperties,
           reached: propertyCount >= subscription.plan.maxProperties,
+        },
+        lots: {
+          used: lotCount,
+          max: subscription.plan.maxLots,
+          reached: lotCount >= subscription.plan.maxLots,
         },
         tenants: {
           used: tenantCount,
@@ -744,17 +765,15 @@ export class SubscriptionsService {
       plan = await subscriptionsRepository.createPlan({
         name: 'Starter',
         code: 'starter',
-        description: 'Offre gratuite de bienvenue',
+        description: `Offre gratuite de bienvenue (essai de ${STARTER_TRIAL_MONTHS} mois)`,
         priceMonthlyXof: 0,
-        maxProperties: 2,
-        maxTenants: 2,
-        features: ['dashboard'],
+        ...DEFAULT_PLAN_QUOTAS.starter,
+        features: DEFAULT_PLAN_FEATURES.starter,
       });
     }
 
     const startDate = new Date();
-    const endDate = new Date();
-    endDate.setDate(endDate.getDate() + 60); // Valable 60 jours selon la validation de l'utilisateur
+    const endDate = computeStarterTrialEnd(startDate); // Essai gratuit de 3 mois
 
     await subscriptionsRepository.createSubscription({
       organizationId,
@@ -764,7 +783,7 @@ export class SubscriptionsService {
       status: 'active',
     });
 
-    logger.info(`[Subscription] Abonnement starter gratuit de 60 jours créé pour l'organisation ${organizationId}`);
+    logger.info(`[Subscription] Abonnement starter gratuit de ${STARTER_TRIAL_MONTHS} mois créé pour l'organisation ${organizationId} (échéance ${endDate.toISOString()})`);
   }
 }
 

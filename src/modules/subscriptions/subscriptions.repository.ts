@@ -11,6 +11,7 @@ export const subscriptionsRepository = {
     priceMonthlyXof: number;
     yearlyDiscountPercent?: number;
     maxProperties: number;
+    maxLots?: number;
     maxTenants: number;
     features: string[];
     isRecommended?: boolean;
@@ -31,6 +32,7 @@ export const subscriptionsRepository = {
     priceMonthlyXof: number;
     yearlyDiscountPercent: number;
     maxProperties: number;
+    maxLots: number;
     maxTenants: number;
     features: string[];
     isRecommended: boolean;

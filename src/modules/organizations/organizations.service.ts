@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs';
 import { sendMail, organizationWelcome } from '@/config/mailer';
 import { logger } from '@/config/logger';
 import { env } from '@/config/env';
+import { computeStarterTrialEnd } from '@/shared/helpers/plan-policy';
 
 export class OrganizationsService {
   async getAllOrganizations(
@@ -41,17 +42,23 @@ export class OrganizationsService {
 
     // 2. Initialiser l'abonnement correspondant au plan choisi
     try {
-      const planCode = orgData.plan || 'starter';
+      const planCode = (orgData.plan || 'starter').toLowerCase();
       const plan = await prisma.subscriptionPlan.findUnique({ where: { code: planCode } });
       if (plan) {
-        const oneYearFromNow = new Date();
-        oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+        const startDate = new Date();
+        const endDate = new Date(startDate);
+        if (planCode === 'starter') {
+          const starterEnd = computeStarterTrialEnd(startDate);
+          endDate.setTime(starterEnd.getTime());
+        } else {
+          endDate.setFullYear(endDate.getFullYear() + 1);
+        }
         await prisma.subscription.create({
           data: {
             organizationId: org.id,
             planId: plan.id,
-            startDate: new Date(),
-            endDate: oneYearFromNow,
+            startDate,
+            endDate,
             status: 'active',
           },
         });
@@ -171,20 +178,30 @@ export class OrganizationsService {
     // Si le plan est modifié, synchroniser également la table subscription
     if (data.plan) {
       try {
-        const plan = await prisma.subscriptionPlan.findUnique({ where: { code: data.plan } });
+        const targetPlanCode = String(data.plan).toLowerCase();
+        const plan = await prisma.subscriptionPlan.findUnique({ where: { code: targetPlanCode } });
         if (plan) {
-          const oneYearFromNow = new Date();
-          oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
-
           const existingSub = await prisma.subscription.findFirst({
             where: { organizationId: id },
             orderBy: { endDate: 'desc' },
           });
 
+          const startDate = existingSub?.startDate ? new Date(existingSub.startDate) : new Date();
+          let endDate = new Date();
+          if (targetPlanCode === 'starter') {
+            endDate = computeStarterTrialEnd(startDate);
+          } else {
+            endDate.setFullYear(endDate.getFullYear() + 1);
+          }
+
           if (existingSub) {
             await prisma.subscription.update({
               where: { id: existingSub.id },
-              data: { planId: plan.id, status: 'active' },
+              data: {
+                planId: plan.id,
+                status: 'active',
+                ...(targetPlanCode === 'starter' ? { endDate } : {}),
+              },
             });
           } else {
             await prisma.subscription.create({
@@ -192,7 +209,7 @@ export class OrganizationsService {
                 organizationId: id,
                 planId: plan.id,
                 startDate: new Date(),
-                endDate: oneYearFromNow,
+                endDate,
                 status: 'active',
               },
             });

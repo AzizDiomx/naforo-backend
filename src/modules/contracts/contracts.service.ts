@@ -8,6 +8,7 @@ import { buildPaginationMeta } from '@/shared/helpers/pagination';
 import { generateContractNumber } from '@/shared/helpers/crypto';
 import crypto from 'crypto';
 import { generateContractPDF } from './contract.pdf';
+import { isLotType } from '@/shared/helpers/plan-policy';
 
 export class ContractsService {
   async getAllContracts(
@@ -38,6 +39,11 @@ export class ContractsService {
       throw new NotFoundError('Bien immobilier introuvable.');
     }
 
+    if (isLotType(property.type)) {
+      throw new BadRequestError('Un lot (immeuble, résidence, ensemble) ne peut pas être loué directement. Veuillez sélectionner un bien (appartement, villa, boutique...) rattaché à ce lot.', [
+        { field: 'propertyId', message: 'Un lot ne peut pas faire l\'objet d\'un bail. Choisissez un bien au sein du lot.' },
+      ]);
+    }
     if (property.status !== 'available') {
       throw new BadRequestError('Ce bien immobilier n\'est pas disponible pour une nouvelle location.', [
         { field: 'propertyId', message: 'Ce bien immobilier est actuellement indisponible ou déjà occupé.' },

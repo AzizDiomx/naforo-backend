@@ -8,7 +8,7 @@ import { uploadSingle } from '@/shared/middlewares/upload.middleware';
 import { auditLog } from '@/shared/middlewares/audit.middleware';
 import { CreateTenantProfileSchema, UpdateTenantProfileSchema } from './tenant-profiles.schema';
 
-import { checkSubscription } from '@/shared/middlewares/subscription.middleware';
+import { checkSubscription, requirePlanFeature } from '@/shared/middlewares/subscription.middleware';
 
 const router = Router();
 
@@ -61,6 +61,7 @@ router.get(
 router.post(
   '/:id/recalculate-risk',
   authorize('admin', 'manager', 'owner'),
+  requirePlanFeature('risk_scoring', 'Scoring prédictif de risque locataire'),
   auditLog('RECALCULATE_TENANT_RISK', 'TenantProfile'),
   tenantProfilesController.recalculateRiskScore
 );
