@@ -89,7 +89,7 @@ const envSchema = z.object({
     .default('587'),
   GMAIL_SMTP_SECURE: booleanString.default('false'),
   GMAIL_USER: z.string().optional().transform((v) => v || process.env.GOOGLE_MAIL_USER || 'ismaeldiom70@gmail.com'),
-  GMAIL_PASS: z.string().optional().transform((v) => v || process.env.GOOGLE_MAIL_PASS || 'umzf ceuy wgad xutw'),
+  GMAIL_PASS: z.string().optional().transform((v) => v || process.env.GOOGLE_MAIL_PASS),
 
   // Twilio
   TWILIO_ACCOUNT_SID: z.string().optional(),
