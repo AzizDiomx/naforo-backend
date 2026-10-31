@@ -13,13 +13,15 @@ import { asyncHandler } from '../helpers/response';
  */
 export const authenticate = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    let token = req.cookies?.accessToken;
+    let token: string | undefined;
 
-    if (!token) {
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        token = authHeader.split(' ')[1];
-      }
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.split(' ')[1];
+    }
+
+    if (!token && req.cookies?.accessToken) {
+      token = req.cookies.accessToken;
     }
 
     if (!token && req.query?.token) {

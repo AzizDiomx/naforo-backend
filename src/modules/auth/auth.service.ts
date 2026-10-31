@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 import { env } from '@/config/env';
@@ -189,16 +190,33 @@ export class AuthService {
     return { user, accessToken, refreshToken };
   }
 
+  // Cache de grâce (30s) pour éviter la déconnexion forcée lors d'appels refreshToken concurrents (multi-requêtes / multi-onglets)
+  private refreshGraceCache = new Map<string, { userId: string; tokens: { accessToken: string; refreshToken: string }; expiresAt: number }>();
+
   async logout(userId: string, token: string): Promise<void> {
-    // 1. Blacklist the current access token in Redis
-    // Set TTL equal to access token lifespan (15 mins)
-    await redis.set(`blacklist:${token}`, '1', 'EX', 15 * 60);
+    // 1. Blacklist the current access token in Redis (sans bloquer si Redis est indisponible)
+    try {
+      await redis.set(`blacklist:${token}`, '1', 'EX', 15 * 60);
+    } catch (err) {
+      logger.warn('Impossible de blacklister le token dans Redis lors du logout', { error: (err as any)?.message });
+    }
+
+    // Purger le cache de grâce pour cet utilisateur
+    for (const [key, entry] of this.refreshGraceCache.entries()) {
+      if (entry.userId === userId) {
+        this.refreshGraceCache.delete(key);
+      }
+    }
 
     // 2. Remove refresh token hash from database
     await authRepository.updateUser(userId, { refreshTokenHash: null });
   }
 
   async refreshTokens(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+    if (!refreshToken) {
+      throw new UnauthorizedError('Jeton de rafraîchissement manquant.');
+    }
+
     try {
       const decoded = jwt.verify(refreshToken, env.JWT_REFRESH_SECRET) as JwtPayload;
       const user = await authRepository.findById(decoded.userId);
@@ -209,7 +227,22 @@ export class AuthService {
 
       // Check refresh token validity by hashing and comparing with DB
       const currentHash = hashToken(refreshToken);
+
       if (user.refreshTokenHash !== currentHash) {
+        // Vérifier la fenêtre de grâce (30 secondes) en mémoire ou dans Redis pour les requêtes parallèles
+        const now = Date.now();
+        const cached = this.refreshGraceCache.get(currentHash);
+        if (cached && cached.userId === user.id && cached.expiresAt > now) {
+          return cached.tokens;
+        }
+
+        try {
+          const redisGrace = await redis.get(`refresh_grace:${currentHash}`);
+          if (redisGrace) {
+            return JSON.parse(redisGrace);
+          }
+        } catch (_) {}
+
         throw new UnauthorizedError('Session expirée ou invalide. Veuillez vous reconnecter.');
       }
 
@@ -219,6 +252,25 @@ export class AuthService {
       // Update refresh token hash
       const newHash = hashToken(tokens.refreshToken);
       await authRepository.updateUser(user.id, { refreshTokenHash: newHash });
+
+      // Enregistrer l'ancien hash dans la fenêtre de grâce de 30 secondes
+      const graceExpiresAt = Date.now() + 30 * 1000;
+      this.refreshGraceCache.set(currentHash, {
+        userId: user.id,
+        tokens,
+        expiresAt: graceExpiresAt,
+      });
+
+      // Nettoyage paresseux des entrées expirées en mémoire
+      for (const [key, entry] of this.refreshGraceCache.entries()) {
+        if (entry.expiresAt <= Date.now()) {
+          this.refreshGraceCache.delete(key);
+        }
+      }
+
+      try {
+        await redis.set(`refresh_grace:${currentHash}`, JSON.stringify(tokens), 'EX', 30);
+      } catch (_) {}
 
       return tokens;
     } catch (error) {
@@ -364,6 +416,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       organizationId: user.organizationId,
+      jti: crypto.randomUUID(),
     };
 
     const accessToken = jwt.sign(payload, env.JWT_ACCESS_SECRET, {
@@ -371,7 +424,7 @@ export class AuthService {
     });
 
     const refreshToken = jwt.sign(
-      { userId: user.id }, 
+      { userId: user.id, jti: crypto.randomUUID() }, 
       env.JWT_REFRESH_SECRET, 
       { expiresIn: env.JWT_REFRESH_EXPIRES_IN as any }
     );

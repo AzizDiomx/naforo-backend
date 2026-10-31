@@ -69,9 +69,12 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const logout = asyncHandler(async (req: Request, res: Response) => {
-  let token = req.cookies?.accessToken;
-  if (!token && req.headers.authorization) {
-    token = req.headers.authorization.split(' ')[1];
+  let token: string | undefined;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.cookies?.accessToken) {
+    token = req.cookies.accessToken;
   }
   
   if (token) {
