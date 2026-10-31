@@ -53,7 +53,18 @@ export class ContractsRepository {
         take: limit,
         orderBy: { [sortBy || 'createdAt']: (sortOrder || 'ASC').toLowerCase() as 'asc' | 'desc' },
         include: {
-          property: { select: { id: true, name: true, type: true, city: true, country: true, address: true } },
+          property: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              city: true,
+              country: true,
+              address: true,
+              parentId: true,
+              parent: { select: { id: true, name: true, type: true } },
+            },
+          },
           tenantProfile: { select: { id: true, firstName: true, lastName: true, phone: true, email: true, reliabilityScore: true } },
           owner: { select: { id: true, firstName: true, lastName: true, email: true } },
         },
@@ -68,7 +79,11 @@ export class ContractsRepository {
     return prisma.contract.findFirst({
       where: { id, organizationId },
       include: {
-        property: true,
+        property: {
+          include: {
+            parent: { select: { id: true, name: true, type: true } },
+          },
+        },
         tenantProfile: true,
         owner: true,
         invoices: { orderBy: { dueDate: 'desc' } },
