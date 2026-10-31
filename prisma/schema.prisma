@@ -150,6 +150,8 @@ model TenantProfile {
   email                 String?
   phone                 String
   nationalId            String?
+  nationalIdType        String?       @default("cni") // 'cni', 'passport', 'attestation', 'consular_card', 'residence_permit'
+  nationalIdDocUrl      String?       // URL du fichier CNI / Passeport téléversé
   profession            String?
   employer              String?
   monthlyIncome         Decimal?      @db.Decimal(15, 2)

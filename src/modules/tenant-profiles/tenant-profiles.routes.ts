@@ -52,6 +52,14 @@ router.post(
   tenantProfilesController.uploadAvatar
 );
 
+router.post(
+  '/:id/id-document',
+  authorize('admin', 'manager', 'owner'),
+  uploadSingle('idDocument'),
+  auditLog('UPLOAD_TENANT_ID_DOCUMENT', 'TenantProfile'),
+  tenantProfilesController.uploadIdDocument
+);
+
 router.get(
   '/:id/history', 
   authorize('admin', 'manager', 'owner', 'tenant'), // ownership check can be added if role is tenant

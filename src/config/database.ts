@@ -48,6 +48,12 @@ export async function testConnection(): Promise<void> {
         ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS "maxLots" INTEGER NOT NULL DEFAULT 1;
       `);
       await prisma.$executeRawUnsafe(`
+        ALTER TABLE tenant_profiles ADD COLUMN IF NOT EXISTS "nationalIdType" TEXT DEFAULT 'cni';
+      `);
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE tenant_profiles ADD COLUMN IF NOT EXISTS "nationalIdDocUrl" TEXT;
+      `);
+      await prisma.$executeRawUnsafe(`
         UPDATE subscription_plans SET "maxLots" = 5, "maxProperties" = 25, "maxTenants" = 25 WHERE code = 'pro' AND "maxLots" <= 1;
       `);
       await prisma.$executeRawUnsafe(`

@@ -39,6 +39,23 @@ export const uploadAvatar = asyncHandler(async (req: Request, res: Response) => 
   return sendSuccess(res, profile, 'Avatar mis à jour avec succès.');
 });
 
+export const uploadIdDocument = asyncHandler(async (req: Request, res: Response) => {
+  const file = req.file;
+  if (!file) {
+    return sendSuccess(res, null, 'Aucun fichier de pièce d\'identité fourni.');
+  }
+
+  const profile = await tenantProfilesService.uploadIdDocument(
+    req.params.id,
+    file,
+    req.organizationId!,
+    req.user!.userId,
+    req.body?.nationalId,
+    req.body?.nationalIdType
+  );
+  return sendSuccess(res, profile, 'Pièce d\'identité téléversée et archivée avec succès.');
+});
+
 export const getHistory = asyncHandler(async (req: Request, res: Response) => {
   const history = await tenantProfilesService.getTenantHistory(req.params.id, req.organizationId!);
   return sendSuccess(res, history, 'Carnet numérique (historique) récupéré.');

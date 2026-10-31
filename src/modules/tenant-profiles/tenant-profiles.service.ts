@@ -209,6 +209,60 @@ export class TenantProfilesService {
     return tenantProfilesRepository.update(id, { avatarUrl });
   }
 
+  async uploadIdDocument(
+    id: string,
+    file: Express.Multer.File,
+    organizationId: string,
+    uploadedBy: string,
+    nationalId?: string,
+    nationalIdType?: string
+  ): Promise<TenantProfile> {
+    const profile = await this.getTenantProfileById(id, organizationId);
+    const nationalIdDocUrl = `/uploads/${file.filename}`;
+
+    const updateData: any = { nationalIdDocUrl };
+    if (nationalId !== undefined && nationalId.trim() !== '') {
+      updateData.nationalId = nationalId.trim();
+    }
+    if (nationalIdType !== undefined && nationalIdType.trim() !== '') {
+      updateData.nationalIdType = nationalIdType.trim();
+    }
+
+    const updated = await tenantProfilesRepository.update(id, updateData);
+
+    // Archiver automatiquement la pièce d'identité dans la GED (Document)
+    try {
+      const idTypeLabels: Record<string, string> = {
+        cni: 'CNI',
+        passport: 'Passeport',
+        attestation: 'Attestation d\'identité',
+        consular_card: 'Carte Consulaire',
+        residence_permit: 'Titre de Séjour',
+      };
+      const typeKey = updateData.nationalIdType || (profile as any).nationalIdType || 'cni';
+      const typeLabel = idTypeLabels[typeKey] || 'Pièce d\'identité';
+      const idNumberSuffix = (updateData.nationalId || profile.nationalId) ? ` (${updateData.nationalId || profile.nationalId})` : '';
+
+      await prisma.document.create({
+        data: {
+          organizationId,
+          entityType: 'tenant',
+          entityId: id,
+          name: `Pièce d'identité - ${typeLabel}${idNumberSuffix} - ${profile.firstName} ${profile.lastName}`,
+          type: file.mimetype.startsWith('image/') ? 'image' : 'pdf',
+          fileUrl: nationalIdDocUrl,
+          fileSize: file.size,
+          mimeType: file.mimetype,
+          uploadedBy,
+        },
+      });
+    } catch (docErr) {
+      logger.warn(`Archivage GED de la pièce d'identité du locataire ${id} ignoré:`, docErr);
+    }
+
+    return updated;
+  }
+
   async getTenantHistory(id: string, organizationId: string): Promise<any> {
     await this.getTenantProfileById(id, organizationId);
     return tenantProfilesRepository.getHistory(id, organizationId);
