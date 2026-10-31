@@ -83,6 +83,17 @@ export const uploadProof = asyncHandler(async (req: Request, res: Response) => {
     return sendSuccess(res, null, 'Aucune preuve de paiement fournie.');
   }
 
+  if (req.user!.role === 'tenant') {
+    const existingPayment = await paymentsService.getPaymentById(req.params.id, req.organizationId!);
+    const tenantProfile = await prisma.tenantProfile.findUnique({
+      where: { userId: req.user!.userId },
+      select: { id: true },
+    });
+    if (!tenantProfile || existingPayment.tenantProfileId !== tenantProfile.id) {
+      throw new ForbiddenError('Accès interdit : Ce paiement ne vous appartient pas.');
+    }
+  }
+
   const proofUrl = `/uploads/${file.filename}`;
   const payment = await paymentsService.uploadProof(req.params.id, proofUrl, req.organizationId!);
   return sendSuccess(res, payment, 'Preuve de paiement téléversée avec succès.');

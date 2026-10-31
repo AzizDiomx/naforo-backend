@@ -32,6 +32,15 @@ try {
   // Gracefully ignore filesystem creation errors on read-only environments
 }
 
+// Extension sûre dérivée du type MIME validé (jamais du nom de fichier fourni par le client)
+const SAFE_EXTENSIONS: Record<string, string> = {
+  'application/pdf': '.pdf',
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, callback) => {
     try {
@@ -42,8 +51,8 @@ const storage = multer.diskStorage({
     callback(null, uploadDir);
   },
   filename: (req, file, callback) => {
-    // Generate unique name keeping original extension
-    const ext = path.extname(file.originalname);
+    // Generate unique name with a safe extension derived from the validated MIME type
+    const ext = SAFE_EXTENSIONS[file.mimetype] || '.bin';
     const filename = `${uuidv4()}${ext}`;
     callback(null, filename);
   },

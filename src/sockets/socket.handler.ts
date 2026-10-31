@@ -3,20 +3,60 @@ import { Server as SocketServer, Socket } from 'socket.io';
 import * as jwt from 'jsonwebtoken';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
+import { prisma } from '@/config/database';
+import { redis } from '@/config/redis';
 import { JwtPayload } from '@/shared/types';
 
 let io: SocketServer;
 
+/**
+ * Même politique CORS que l'API HTTP (app.ts) : domaines officiels *.naforo.company,
+ * previews Vercel du projet, et environnements locaux.
+ */
+function isSocketOriginAllowed(origin: string, allowedOrigins: string[]): boolean {
+  const normalized = origin.replace(/\/$/, '');
+  if (allowedOrigins.includes(normalized)) return true;
+  try {
+    const url = new URL(normalized);
+    if (url.hostname === 'naforo.company' || url.hostname.endsWith('.naforo.company')) return true;
+    if (url.hostname.endsWith('.vercel.app') && (url.hostname.includes('naforo') || url.hostname.includes('home'))) return true;
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return true;
+  } catch (_) {}
+  return false;
+}
+
+/**
+ * Vérifie qu'un utilisateur a le droit de rejoindre un fil de discussion :
+ * - super_admin : toujours
+ * - locataire : uniquement ses propres fils
+ * - personnel de l'agence : uniquement les fils de son organisation
+ */
+async function canJoinThread(user: JwtPayload, threadId: string): Promise<boolean> {
+  if (user.role === 'super_admin') return true;
+  const thread = await prisma.chatThread.findUnique({
+    where: { id: threadId },
+    select: { organizationId: true, tenantProfile: { select: { userId: true } } },
+  });
+  if (!thread) return false;
+  if (user.role === 'tenant') {
+    return thread.tenantProfile?.userId === user.userId;
+  }
+  return Boolean(user.organizationId) && thread.organizationId === user.organizationId;
+}
+
 export function initializeSocket(httpServer: HTTPServer): SocketServer {
-  const allowedOrigins = env.CORS_ORIGINS ? env.CORS_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'];
+  const allowedOrigins = (env.CORS_ORIGINS ? env.CORS_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'])
+    .map((o) => o.trim().replace(/\/$/, ''))
+    .filter(Boolean);
 
   io = new SocketServer(httpServer, {
     cors: {
       origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
+        // Applications mobiles / serveur-à-serveur (pas d'en-tête Origin) ou origine autorisée
+        if (!origin || isSocketOriginAllowed(origin, allowedOrigins) || process.env.NODE_ENV === 'development') {
           callback(null, true);
         } else {
-          callback(null, true);
+          callback(null, false);
         }
       },
       methods: ['GET', 'POST'],
@@ -26,15 +66,23 @@ export function initializeSocket(httpServer: HTTPServer): SocketServer {
   });
 
   // Authentication middleware for socket connections
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = socket.handshake.auth.token || socket.handshake.headers['x-auth-token'];
     
     if (!token) {
       return next(new Error('Authentication required'));
     }
+
+    // Refuser les jetons révoqués (déconnexion)
+    try {
+      const isBlacklisted = await redis.get(`blacklist:${token}`);
+      if (isBlacklisted) {
+        return next(new Error('Session revoked'));
+      }
+    } catch (_) {}
     
     try {
-      const payload = jwt.verify(token, env.JWT_ACCESS_SECRET) as JwtPayload;
+      const payload = jwt.verify(token as string, env.JWT_ACCESS_SECRET) as JwtPayload;
       (socket as any).user = payload;
       next();
     } catch (err) {
@@ -60,10 +108,19 @@ export function initializeSocket(httpServer: HTTPServer): SocketServer {
     }
 
     // 3. Join specific chat thread room for instant messaging
-    socket.on('chat:join_thread', (threadId: string) => {
-      if (threadId) {
+    socket.on('chat:join_thread', async (threadId: string) => {
+      if (!threadId || typeof threadId !== 'string') return;
+      try {
+        const allowed = await canJoinThread(user, threadId);
+        if (!allowed) {
+          logger.warn(`Socket ${socket.id} (user: ${user.userId}) refused access to thread:${threadId}`);
+          socket.emit('chat:error', { threadId, message: 'Accès refusé à cette conversation.' });
+          return;
+        }
         socket.join(`thread:${threadId}`);
         logger.debug(`Socket ${socket.id} joined thread:${threadId}`);
+      } catch (err) {
+        logger.error(`Erreur de vérification d'accès au fil ${threadId}`, err);
       }
     });
 

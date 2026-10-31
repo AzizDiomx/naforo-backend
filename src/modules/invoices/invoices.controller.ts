@@ -45,11 +45,13 @@ export const createInvoice = asyncHandler(async (req: Request, res: Response) =>
 });
 
 export const triggerPdfGeneration = asyncHandler(async (req: Request, res: Response) => {
+  await invoicesService.getInvoiceById(req.params.id, req.organizationId!);
   const pdfUrl = await invoicesService.generateInvoicePDF(req.params.id);
   return sendSuccess(res, { pdfUrl }, 'Génération du PDF de la facture lancée avec succès.');
 });
 
 export const sendInvoiceToTenant = asyncHandler(async (req: Request, res: Response) => {
+  await invoicesService.getInvoiceById(req.params.id, req.organizationId!);
   await invoicesService.sendInvoiceEmail(req.params.id);
   return sendSuccess(res, null, 'Facture envoyée au locataire par email.');
 });

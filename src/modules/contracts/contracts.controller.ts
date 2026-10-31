@@ -1,7 +1,21 @@
 import { Request, Response } from 'express';
 import { contractsService } from './contracts.service';
+import { prisma } from '@/config/database';
+import { ForbiddenError } from '@/shared/errors/AppError';
 import { sendSuccess, sendPaginated, asyncHandler } from '@/shared/helpers/response';
 import { getPaginationParams } from '@/shared/helpers/pagination';
+
+async function assertTenantOwnsContract(req: Request, contract: { tenantProfileId: string }) {
+  if (req.user?.role === 'tenant') {
+    const profile = await prisma.tenantProfile.findUnique({
+      where: { userId: req.user.userId },
+      select: { id: true },
+    });
+    if (!profile || contract.tenantProfileId !== profile.id) {
+      throw new ForbiddenError('Accès interdit : Ce contrat de bail ne vous appartient pas.');
+    }
+  }
+}
 
 export const getAllContracts = asyncHandler(async (req: Request, res: Response) => {
   const queryParams = getPaginationParams(req);
@@ -20,6 +34,7 @@ export const getAllContracts = asyncHandler(async (req: Request, res: Response) 
 
 export const getContractById = asyncHandler(async (req: Request, res: Response) => {
   const contract = await contractsService.getContractById(req.params.id, req.organizationId!);
+  await assertTenantOwnsContract(req, contract);
   return sendSuccess(res, contract, 'Contrat de bail récupéré.');
 });
 
@@ -62,6 +77,8 @@ export const getStats = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const generatePdf = asyncHandler(async (req: Request, res: Response) => {
+  const contract = await contractsService.getContractById(req.params.id, req.organizationId!);
+  await assertTenantOwnsContract(req, contract);
   const result = await contractsService.generateContractPDFDocument(req.params.id, req.organizationId!);
   return sendSuccess(res, result, 'Document du bail généré avec succès.');
 });
@@ -76,6 +93,9 @@ export const sendSignatureOtp = asyncHandler(async (req: Request, res: Response)
 });
 
 export const signContractWithOtp = asyncHandler(async (req: Request, res: Response) => {
+  const contract = await contractsService.getContractById(req.params.id, req.organizationId!);
+  await assertTenantOwnsContract(req, contract);
+
   const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
   const userAgent = req.headers['user-agent'] || 'Naforo Web App';
 

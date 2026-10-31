@@ -289,7 +289,15 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
     await authRepository.createOTP(user.id, otp, 'password_reset', expiresAt);
 
-    logger.info(`🔑 [OTP MOT DE PASSE OUBLIÉ] Destinataire: ${user.email} | Code OTP: ${otp}`);
+    // Ne jamais journaliser le code OTP en clair hors environnement de développement
+    if (env.NODE_ENV === 'development') {
+      logger.info(`🔑 [OTP MOT DE PASSE OUBLIÉ] Destinataire: ${user.email} | Code OTP: ${otp}`);
+    } else {
+      logger.info(`🔑 [OTP MOT DE PASSE OUBLIÉ] Code envoyé à ${user.email}`);
+    }
+
+    // Réinitialiser le compteur d'échecs lors de l'émission d'un nouveau code
+    await this.resetOtpAttempts(email, 'password_reset');
 
     // Send reset password OTP email via admin@naforo.company (avec bascule automatique Google Gmail)
     await sendMail(
@@ -311,11 +319,88 @@ export class AuthService {
     ).catch((err) => logger.error('Failed to send forgot password email', err));
   }
 
+  // ---------------------------------------------------------------------------
+  // Protection anti-force brute des codes OTP (5 essais max / 15 min par email + type)
+  // ---------------------------------------------------------------------------
+  private otpAttemptsMemory = new Map<string, { count: number; expiresAt: number }>();
+  private static readonly OTP_MAX_ATTEMPTS = 5;
+  private static readonly OTP_WINDOW_SECONDS = 15 * 60;
+
+  private otpAttemptKey(email: string, type: string): string {
+    return `otp_attempts:${type}:${(email || '').trim().toLowerCase()}`;
+  }
+
+  private async getOtpAttempts(email: string, type: string): Promise<number> {
+    const key = this.otpAttemptKey(email, type);
+    try {
+      const val = await redis.get(key);
+      if (val !== null && val !== undefined) return parseInt(val, 10) || 0;
+    } catch (_) {}
+    const mem = this.otpAttemptsMemory.get(key);
+    if (mem && mem.expiresAt > Date.now()) return mem.count;
+    return 0;
+  }
+
+  private async incrementOtpAttempts(email: string, type: string): Promise<number> {
+    const key = this.otpAttemptKey(email, type);
+    const now = Date.now();
+    const mem = this.otpAttemptsMemory.get(key);
+    const count = mem && mem.expiresAt > now ? mem.count + 1 : 1;
+    this.otpAttemptsMemory.set(key, {
+      count,
+      expiresAt: mem && mem.expiresAt > now ? mem.expiresAt : now + AuthService.OTP_WINDOW_SECONDS * 1000,
+    });
+    try {
+      const redisCount = await redis.incr(key);
+      if (redisCount === 1) await redis.expire(key, AuthService.OTP_WINDOW_SECONDS);
+      return Math.max(redisCount, count);
+    } catch (_) {
+      return count;
+    }
+  }
+
+  private async resetOtpAttempts(email: string, type: string): Promise<void> {
+    const key = this.otpAttemptKey(email, type);
+    this.otpAttemptsMemory.delete(key);
+    try {
+      await redis.del(key);
+    } catch (_) {}
+  }
+
+  private async assertOtpNotLocked(email: string, type: string): Promise<void> {
+    const attempts = await this.getOtpAttempts(email, type);
+    if (attempts >= AuthService.OTP_MAX_ATTEMPTS) {
+      throw new BadRequestError(
+        'Trop de tentatives de code incorrectes. Par sécurité, veuillez demander un nouveau code et réessayer dans 15 minutes.'
+      );
+    }
+  }
+
+  private async invalidateActiveOtps(email: string, type: string): Promise<void> {
+    try {
+      await prisma.otpToken.updateMany({
+        where: {
+          type,
+          usedAt: null,
+          user: { email: { equals: (email || '').trim(), mode: 'insensitive' } },
+        },
+        data: { usedAt: new Date() },
+      });
+    } catch (_) {}
+  }
+
   async resetPassword(data: any): Promise<void> {
+    await this.assertOtpNotLocked(data.email, 'password_reset');
+
     const otpRecord = await authRepository.findValidOTP(data.email, data.token, 'password_reset');
     if (!otpRecord) {
+      const attempts = await this.incrementOtpAttempts(data.email, 'password_reset');
+      if (attempts >= AuthService.OTP_MAX_ATTEMPTS) {
+        await this.invalidateActiveOtps(data.email, 'password_reset');
+      }
       throw new BadRequestError('Code OTP invalide, expiré ou déjà utilisé.');
     }
+    await this.resetOtpAttempts(data.email, 'password_reset');
 
     const salt = await bcrypt.genSalt(env.BCRYPT_ROUNDS);
     const passwordHash = await bcrypt.hash(data.newPassword, salt);
@@ -331,10 +416,17 @@ export class AuthService {
   }
 
   async verifyEmail(data: any): Promise<void> {
+    await this.assertOtpNotLocked(data.email, 'email_verification');
+
     const otpRecord = await authRepository.findValidOTP(data.email, data.token, 'email_verification');
     if (!otpRecord) {
+      const attempts = await this.incrementOtpAttempts(data.email, 'email_verification');
+      if (attempts >= AuthService.OTP_MAX_ATTEMPTS) {
+        await this.invalidateActiveOtps(data.email, 'email_verification');
+      }
       throw new BadRequestError('Code de validation OTP invalide, expiré ou déjà utilisé.');
     }
+    await this.resetOtpAttempts(data.email, 'email_verification');
 
     // Mark email as verified
     await authRepository.updateUser(otpRecord.userId!, {

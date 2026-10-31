@@ -69,6 +69,11 @@ export class PaymentsService {
 
     const actualTenantProfileId = tenantProfileId || contract.tenantProfileId;
 
+    // 1b. Si déclaré par un locataire, vérifier que le contrat lui appartient bien
+    if (data.isTenantSelfDeclaration && contract.tenantProfileId !== actualTenantProfileId) {
+      throw new BadRequestError('Vous ne pouvez déclarer un paiement que sur votre propre contrat de bail.');
+    }
+
     // 2. Anti-doublon check: Prevent duplicate PENDING declarations for the same contract/invoice (if declared by tenant)
     if (data.isTenantSelfDeclaration) {
       const existingPending = await prisma.payment.findFirst({
@@ -135,8 +140,8 @@ export class PaymentsService {
       status: 'pending',
     });
 
-    // Si auto-validation demandée (ex: encaissement comptant saisi directement par le gestionnaire)
-    if (data.autoValidate) {
+    // Si auto-validation demandée (ex: encaissement comptant saisi directement par le gestionnaire, jamais par le locataire)
+    if (data.autoValidate && !data.isTenantSelfDeclaration) {
       return this.validatePayment(payment.id, declaredBy, { status: 'validated' }, organizationId);
     }
 

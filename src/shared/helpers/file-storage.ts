@@ -266,9 +266,7 @@ export async function resolveOrRegenerateUpload(
       where: {
         OR: [
           { receiptNumber: baseIdOrRef },
-          { id: baseIdOrRef },
-          { pdfUrl: { endsWith: cleanFilename } },
-          { pdfUrl: { contains: baseIdOrRef } },
+          { pdfUrl: { endsWith: `/${cleanFilename}` } },
         ],
       },
     });
@@ -293,9 +291,7 @@ export async function resolveOrRegenerateUpload(
       where: {
         OR: [
           { invoiceNumber: baseIdOrRef },
-          { id: baseIdOrRef },
-          { pdfUrl: { endsWith: cleanFilename } },
-          { pdfUrl: { contains: baseIdOrRef } },
+          { pdfUrl: { endsWith: `/${cleanFilename}` } },
         ],
       },
     });
@@ -321,9 +317,8 @@ export async function resolveOrRegenerateUpload(
         OR: [
           { contractNumber: cleanContractRef },
           { contractNumber: baseIdOrRef },
-          { id: baseIdOrRef },
-          { documentUrl: { endsWith: cleanFilename } },
-          { signedPdfUrl: { endsWith: cleanFilename } },
+          { documentUrl: { endsWith: `/${cleanFilename}` } },
+          { signedPdfUrl: { endsWith: `/${cleanFilename}` } },
         ],
       },
       include: {
@@ -356,9 +351,7 @@ export async function resolveOrRegenerateUpload(
       where: {
         OR: [
           { reportNumber: baseIdOrRef },
-          { id: baseIdOrRef },
-          { pdfUrl: { endsWith: cleanFilename } },
-          { pdfUrl: { contains: baseIdOrRef } },
+          { pdfUrl: { endsWith: `/${cleanFilename}` } },
         ],
       },
       include: {
@@ -425,11 +418,8 @@ export async function resolveOrRegenerateUpload(
       where: {
         OR: [
           { paymentReference: baseIdOrRef },
-          { id: baseIdOrRef },
-          { pdfUrl: { endsWith: cleanFilename } },
-          { proofUrl: { endsWith: cleanFilename } },
-          { pdfUrl: { contains: baseIdOrRef } },
-          { proofUrl: { contains: baseIdOrRef } },
+          { pdfUrl: { endsWith: `/${cleanFilename}` } },
+          { proofUrl: { endsWith: `/${cleanFilename}` } },
         ],
       },
       include: {
@@ -486,10 +476,7 @@ export async function resolveOrRegenerateUpload(
     const rentPayment = await prisma.payment.findFirst({
       where: {
         OR: [
-          { proofUrl: { endsWith: cleanFilename } },
-          { proofUrl: { contains: baseIdOrRef } },
-          { paymentReference: baseIdOrRef },
-          { id: baseIdOrRef },
+          { proofUrl: { endsWith: `/${cleanFilename}` } },
         ],
       },
       include: {
@@ -549,9 +536,7 @@ export async function resolveOrRegenerateUpload(
     const gedDoc = await prisma.document.findFirst({
       where: {
         OR: [
-          { fileUrl: { endsWith: cleanFilename } },
-          { fileUrl: { contains: baseIdOrRef } },
-          { id: baseIdOrRef },
+          { fileUrl: { endsWith: `/${cleanFilename}` } },
         ],
       },
       include: {
@@ -630,9 +615,8 @@ export async function resolveOrRegenerateUpload(
     const incident = await prisma.incident.findFirst({
       where: {
         OR: [
-          { quoteUrl: { endsWith: cleanFilename } },
-          { invoiceUrl: { endsWith: cleanFilename } },
-          { id: baseIdOrRef },
+          { quoteUrl: { endsWith: `/${cleanFilename}` } },
+          { invoiceUrl: { endsWith: `/${cleanFilename}` } },
         ],
       },
       include: {
@@ -669,8 +653,7 @@ export async function resolveOrRegenerateUpload(
     const accountingTx = await prisma.accountingTransaction.findFirst({
       where: {
         OR: [
-          { documentUrl: { endsWith: cleanFilename } },
-          { id: baseIdOrRef },
+          { documentUrl: { endsWith: `/${cleanFilename}` } },
         ],
       },
       include: {

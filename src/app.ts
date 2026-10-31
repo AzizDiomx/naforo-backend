@@ -24,8 +24,8 @@ app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cookieParser());
 app.use(compression());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // 2. Logging with Morgan
 if (process.env.NODE_ENV === 'development') {
@@ -65,8 +65,11 @@ function isOriginAllowed(origin: string): boolean {
     if (url.hostname === 'naforo.company' || url.hostname.endsWith('.naforo.company')) {
       return true;
     }
-    // Autoriser les déploiements preview Vercel (*.vercel.app)
-    if (url.hostname.endsWith('.vercel.app')) {
+    // Autoriser les déploiements preview Vercel du projet uniquement
+    if (
+      url.hostname.endsWith('.vercel.app') &&
+      (url.hostname.includes('naforo') || url.hostname.includes('home'))
+    ) {
       return true;
     }
     // Environnements locaux
@@ -129,10 +132,32 @@ const authLimiter = rateLimit({
 app.use(`${env.API_PREFIX}/auth/login`, authLimiter);
 app.use(`${env.API_PREFIX}/auth/register`, authLimiter);
 app.use(`${env.API_PREFIX}/auth/forgot-password`, authLimiter);
+app.use(`${env.API_PREFIX}/auth/reset-password`, authLimiter);
+app.use(`${env.API_PREFIX}/auth/verify-email`, authLimiter);
 
-// 5. Static uploads directory serving & On-demand file/PDF recovery (Résilience Serverless / Conteneurs)
+// Anti-force brute sur la signature électronique OTP des baux (10 essais / 15 min / IP)
+const signOtpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
+  message: {
+    success: false,
+    message: 'Trop de tentatives de signature OTP depuis cette adresse IP. Veuillez patienter 15 minutes.',
+  },
+});
+app.post(`${env.API_PREFIX}/contracts/:id/sign-otp`, signOtpLimiter);
+
+//5. Static uploads directory serving & On-demand file/PDF recovery (Résilience Serverless / Conteneurs)
 const staticUploadsDirLocal = path.join(process.cwd(), env.UPLOAD_DIR || 'uploads');
 const staticUploadsDirTmp = path.join(os.tmpdir(), env.UPLOAD_DIR || 'uploads');
+
+// En-têtes de sécurité anti-sniffing sur tous les fichiers servis depuis /uploads
+app.use('/uploads', (req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
 
 // Servez d'abord les fichiers statiques physiques déjà existants
 app.use('/uploads', express.static(staticUploadsDirLocal, { maxAge: '1d' }));
