@@ -316,6 +316,80 @@ export class ContractsService {
       message: 'Le contrat de bail a été signé électroniquement avec succès.',
     };
   }
+
+  async bypassContractSignature(
+    id: string,
+    organizationId: string,
+    adminUserId: string,
+    ip: string,
+    userAgent: string,
+    reason?: string
+  ): Promise<any> {
+    const contract = await prisma.contract.findFirst({
+      where: { id, organizationId },
+      include: {
+        organization: true,
+        tenantProfile: true,
+        property: {
+          include: {
+            landlord: true,
+            parent: true,
+          },
+        },
+      },
+    });
+
+    if (!contract) throw new NotFoundError('Contrat de bail introuvable.');
+    if (contract.status === 'terminated') throw new BadRequestError('Ce contrat est résilié.');
+
+    const signedAt = new Date();
+    const hashPayload = `${contract.id}-${contract.contractNumber}-${signedAt.getTime()}-PASS-ADMIN-${adminUserId}-${reason || 'BYPASS'}`;
+    const signatureHash = crypto.createHash('sha256').update(hashPayload).digest('hex');
+
+    const pdfResult = await generateContractPDF({
+      contract: {
+        ...contract,
+        signatureStatus: 'signed',
+        signatureOtp: 'PASS-ADMIN',
+        signedAt,
+        signatureHash,
+        signatureIp: ip,
+        signaturePhone: contract.tenantProfile.phone,
+      },
+      organization: contract.organization,
+      property: contract.property,
+      tenant: contract.tenantProfile,
+      landlord: contract.property.landlord,
+    });
+
+    const updatedContract = await prisma.contract.update({
+      where: { id },
+      data: {
+        signatureStatus: 'signed',
+        signatureOtp: 'PASS-ADMIN',
+        signatureOtpExpiresAt: null,
+        signedAt,
+        signatureIp: ip,
+        signatureUserAgent: userAgent,
+        signatureHash,
+        signaturePhone: contract.tenantProfile.phone,
+        signedPdfUrl: pdfResult.relativePath,
+        documentUrl: pdfResult.relativePath,
+        status: 'active',
+      },
+    });
+
+    emitToOrg(organizationId, 'contract:signed', updatedContract);
+
+    return {
+      success: true,
+      contract: updatedContract,
+      signedPdfUrl: pdfResult.relativePath,
+      signatureHash,
+      signedAt,
+      message: 'Étape de signature électronique validée par l\'administrateur (Pass OTP activé).',
+    };
+  }
 }
 
 export const contractsService = new ContractsService();

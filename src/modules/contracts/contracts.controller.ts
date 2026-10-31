@@ -89,3 +89,18 @@ export const signContractWithOtp = asyncHandler(async (req: Request, res: Respon
   );
   return sendSuccess(res, result, result.message);
 });
+
+export const bypassSignature = asyncHandler(async (req: Request, res: Response) => {
+  const ip = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+  const userAgent = req.headers['user-agent'] || 'Naforo Web App';
+
+  const result = await contractsService.bypassContractSignature(
+    req.params.id,
+    req.organizationId!,
+    req.user!.userId,
+    ip,
+    userAgent,
+    req.body?.reason
+  );
+  return sendSuccess(res, result, result.message);
+});

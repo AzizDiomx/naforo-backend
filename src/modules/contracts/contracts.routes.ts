@@ -93,4 +93,11 @@ router.post(
   contractsController.signContractWithOtp
 );
 
+router.post(
+  '/:id/bypass-signature',
+  authorize('admin', 'manager', 'owner'),
+  auditLog('BYPASS_CONTRACT_SIGNATURE', 'Contract'),
+  contractsController.bypassSignature
+);
+
 export default router;

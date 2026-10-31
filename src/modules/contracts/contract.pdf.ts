@@ -199,30 +199,43 @@ export function generateContractPDF(data: ContractPDFData): Promise<{ relativePa
 
     currentY += 8;
 
-    // SECTION 7: BLOC DE SIGNATURE & CERTIFICATION ÉLECTRONIQUE (OTP)
+    // SECTION 7: BLOC DE SIGNATURE & CERTIFICATION ÉLECTRONIQUE (OTP OU BYPASS ADMIN)
     const isSigned = contract.signatureStatus === 'signed' || !!contract.signedAt;
+    const isBypass = contract.signatureOtp === 'PASS-ADMIN';
 
     if (isSigned) {
-      // BOX CERTIFIÉE DE SIGNATURE ÉLECTRONIQUE
+      // BOX CERTIFIÉE DE SIGNATURE ÉLECTRONIQUE OU VALIDATION ADMINISTRATIVE
       doc.rect(45, currentY, 505, 105).fill('#f0fdf4');
       doc.rect(45, currentY, 505, 105).stroke('#16a34a');
 
       doc.fillColor('#166534').fontSize(10).font('Helvetica-Bold');
-      doc.text('CONTRAT CERTIFIÉ ET SIGNÉ ÉLECTRONIQUEMENT (NAFORO SECURE SIGN)', 55, currentY + 10);
+      doc.text(
+        isBypass
+          ? 'CONTRAT VALIDÉ ET ACTIVÉ PAR L’ADMINISTRATEUR (DISPENSE OTP / SIGNATURE PHYSIQUE)'
+          : 'CONTRAT CERTIFIÉ ET SIGNÉ ÉLECTRONIQUEMENT (NAFORO SECURE SIGN)',
+        55,
+        currentY + 10
+      );
 
       doc.fontSize(7.5).font('Helvetica').fillColor('#15803d');
       doc.text(
-        'Document authentifié par code sécurisé à usage unique (OTP) conformément à la Loi n° 2013-546 sur les transactions électroniques.',
+        isBypass
+          ? 'Validation administrative directe effectuée par le gestionnaire/propriétaire pour non-blocage du dossier locataire.'
+          : 'Document authentifié par code sécurisé à usage unique (OTP) conformément à la Loi n° 2013-546 sur les transactions électroniques.',
         55,
         currentY + 24
       );
 
       // Left col: Tenant Signature
-      doc.fillColor('#1f2937').fontSize(8).font('Helvetica-Bold').text('SIGNATURE DU PRENEUR :', 55, currentY + 42);
+      doc.fillColor('#1f2937').fontSize(8).font('Helvetica-Bold').text('VALIDATION DU PRENEUR :', 55, currentY + 42);
       doc.font('Helvetica').fontSize(7.5);
-      doc.text(`Signataire : ${locataireNom}`, 55, currentY + 54);
-      doc.text(`Réf. Validation OTP : ${contract.signatureOtp ? `OTP-${contract.signatureOtp}` : 'CERT-OTP-VALIDE'}`, 55, currentY + 65);
-      doc.text(`Téléphone certifié : ${contract.signaturePhone || tenant.phone}`, 55, currentY + 76);
+      doc.text(`Preneur : ${locataireNom}`, 55, currentY + 54);
+      doc.text(
+        `Mode de validation : ${isBypass ? 'PASS-ADMIN (Validation physique / manuelle)' : contract.signatureOtp ? `OTP-${contract.signatureOtp}` : 'CERT-OTP-VALIDE'}`,
+        55,
+        currentY + 65
+      );
+      doc.text(`Téléphone : ${contract.signaturePhone || tenant.phone}`, 55, currentY + 76);
       doc.text(`Date & Heure : ${contract.signedAt ? new Date(contract.signedAt).toUTCString() : new Date().toUTCString()}`, 55, currentY + 87);
 
       // Right col: Hash SHA256 & Agency stamp
