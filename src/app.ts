@@ -10,6 +10,7 @@ import fs from 'fs';
 import cookieParser from 'cookie-parser';
 import { env } from '@/config/env';
 import { prisma } from '@/config/database';
+import { redis } from '@/config/redis';
 import { logger } from '@/config/logger';
 import { errorMiddleware } from '@/shared/middlewares/error.middleware';
 import router from '@/routes';
@@ -200,14 +201,51 @@ app.get('/uploads/:filename', (req: Request, res: Response, next: NextFunction) 
 // 6. Mount central router
 app.use(env.API_PREFIX, router);
 
-// 7. Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'ok',
+// 7. Health check endpoint (Sonde haute disponibilité pour UptimeRobot, BetterStack, Cloudflare, etc.)
+app.get('/health', async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  let dbStatus = 'connected';
+  let redisStatus = 'connected';
+  let isHealthy = true;
+
+  // Test de connectivité PostgreSQL
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+  } catch (err) {
+    dbStatus = 'disconnected';
+    isHealthy = false;
+  }
+
+  // Test de connectivité Redis
+  try {
+    const pong = await redis.ping();
+    if (pong !== 'PONG') redisStatus = 'degraded';
+  } catch (err) {
+    redisStatus = 'disconnected';
+  }
+
+  const memoryUsage = process.memoryUsage();
+  const responseTimeMs = Date.now() - startTime;
+
+  const payload = {
+    status: isHealthy ? 'healthy' : 'unhealthy',
     timestamp: new Date().toISOString(),
-    env: process.env.NODE_ENV,
+    uptimeSeconds: Math.floor(process.uptime()),
+    responseTimeMs,
+    environment: process.env.NODE_ENV,
     version: '1.0.0',
-  });
+    services: {
+      database: dbStatus,
+      redis: redisStatus,
+    },
+    memory: {
+      rssMb: Math.round(memoryUsage.rss / 1024 / 1024),
+      heapUsedMb: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+      heapTotalMb: Math.round(memoryUsage.heapTotal / 1024 / 1024),
+    },
+  };
+
+  return res.status(isHealthy ? 200 : 503).json(payload);
 });
 
 // 8. 404 Handler
