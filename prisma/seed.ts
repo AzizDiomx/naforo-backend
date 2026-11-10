@@ -87,7 +87,7 @@ async function main() {
       yearlyDiscountPercent: 20,
       maxProperties: 9999,
       maxTenants: 9999,
-      features: ['email_reminders', 'sms_whatsapp', 'mobile_money_autovalidate', 'qr_code_verification', 'excel_export', 'ged_vault', 'chat_encrypted', 'incident_management', 'multi_users', 'agency_mandates', 'dgi_accounting_export', 'api_webhooks', 'priority_support_sla'],
+      features: ['email_reminders', 'sms_whatsapp', 'mobile_money_autovalidate', 'qr_code_verification', 'excel_export', 'ged_vault', 'chat_encrypted', 'incident_management', 'multi_users', 'digital_inspections', 'whatsapp_reminders', 'agency_mandates', 'dgi_accounting_export', 'api_webhooks', 'priority_support_sla'],
       isRecommended: false,
     },
     create: {
@@ -98,7 +98,7 @@ async function main() {
       yearlyDiscountPercent: 20,
       maxProperties: 9999,
       maxTenants: 9999,
-      features: ['email_reminders', 'sms_whatsapp', 'mobile_money_autovalidate', 'qr_code_verification', 'excel_export', 'ged_vault', 'chat_encrypted', 'incident_management', 'multi_users', 'agency_mandates', 'dgi_accounting_export', 'api_webhooks', 'priority_support_sla'],
+      features: ['email_reminders', 'sms_whatsapp', 'mobile_money_autovalidate', 'qr_code_verification', 'excel_export', 'ged_vault', 'chat_encrypted', 'incident_management', 'multi_users', 'digital_inspections', 'whatsapp_reminders', 'agency_mandates', 'dgi_accounting_export', 'api_webhooks', 'priority_support_sla'],
       isRecommended: false,
     },
   });
