@@ -39,6 +39,8 @@ export const PLAN_FEATURE_CODES = {
   ADVANCED_STATS: 'advanced_stats',
   WHITE_LABEL: 'white_label',
   E_SIGNATURE: 'e_signature',
+  DIGITAL_INSPECTIONS: 'digital_inspections',
+  WHATSAPP_REMINDERS: 'whatsapp_reminders',
 } as const;
 
 export type PlanFeatureCode = (typeof PLAN_FEATURE_CODES)[keyof typeof PLAN_FEATURE_CODES];
@@ -80,6 +82,8 @@ export const DEFAULT_PLAN_FEATURES: Record<string, string[]> = {
     'advanced_stats',
     'white_label',
     'e_signature',
+    'digital_inspections',
+    'whatsapp_reminders',
     'agency_mandates',
     'api_webhooks',
     'priority_support_sla',

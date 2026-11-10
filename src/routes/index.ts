@@ -20,6 +20,8 @@ import chatRoutes from '@/modules/chat/chat.routes';
 import locationsRoutes from '@/modules/locations/locations.routes';
 import landlordRoutes from '@/modules/landlords/landlords.routes';
 import managementReportRoutes from '@/modules/management-reports/management-reports.routes';
+import inspectionRoutes from '@/modules/inspections/inspections.routes';
+import whatsappRoutes from '@/modules/whatsapp/whatsapp.routes';
 
 const router = Router();
 
@@ -44,5 +46,7 @@ router.use('/tenant-portal', tenantPortalRoutes);
 router.use('/admin', adminRoutes);
 router.use('/chat', chatRoutes);
 router.use('/locations', locationsRoutes);
+router.use('/inspections', inspectionRoutes);
+router.use('/whatsapp', whatsappRoutes);
 
 export default router;

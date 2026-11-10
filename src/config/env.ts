@@ -95,6 +95,7 @@ const envSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_PHONE_NUMBER: z.string().optional(),
+  TWILIO_WHATSAPP_NUMBER: z.string().optional(),
 
   // Firebase
   FIREBASE_PROJECT_ID: z.string().optional(),

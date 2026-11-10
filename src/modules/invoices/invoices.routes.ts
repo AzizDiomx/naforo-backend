@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import * as invoicesController from './invoices.controller';
+import * as whatsappController from '@/modules/whatsapp/whatsapp.controller';
 import { validate } from '@/shared/middlewares/validate.middleware';
 import { authenticate } from '@/shared/middlewares/auth.middleware';
 import { authorize } from '@/shared/middlewares/rbac.middleware';
 import { requireTenant } from '@/shared/middlewares/tenant.middleware';
 import { auditLog } from '@/shared/middlewares/audit.middleware';
+import { checkSubscription, requirePlanFeature } from '@/shared/middlewares/subscription.middleware';
 import { CreateInvoiceSchema, UpdateInvoiceSchema } from './invoices.schema';
 
 const router = Router();
@@ -57,6 +59,14 @@ router.post(
   authorize('admin', 'manager', 'accountant', 'owner'), 
   auditLog('SEND_INVOICE_EMAIL', 'Invoice'),
   invoicesController.sendInvoiceToTenant
+);
+
+router.post(
+  '/:id/remind-whatsapp',
+  authorize('admin', 'manager', 'accountant', 'owner'),
+  requirePlanFeature('whatsapp_reminders', 'Relances automatiques par WhatsApp'),
+  auditLog('SEND_INVOICE_WHATSAPP', 'Invoice'),
+  whatsappController.remindInvoice
 );
 
 router.put(

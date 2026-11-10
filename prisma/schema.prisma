@@ -51,6 +51,8 @@ model Organization {
   chatThreads            ChatThread[]
   landlords              Landlord[]
   managementReports      ManagementReport[]
+  propertyInspections    PropertyInspection[]
+  whatsappLogs           WhatsAppLog[]
 
   @@map("organizations")
 }
@@ -91,6 +93,7 @@ model User {
   accountingEntries          AccountingTransaction[]  @relation("AccountingCreator")
   createdReports             ManagementReport[]       @relation("ReportCreator")
   approvedIncidents          Incident[]               @relation("IncidentApprover")
+  inspectionsConducted       PropertyInspection[]     @relation("InspectorUser")
 
   @@map("users")
 }
@@ -133,6 +136,7 @@ model Property {
   incidents      Incident[]
   accountingTransactions AccountingTransaction[]
   chatThreads    ChatThread[]
+  inspections    PropertyInspection[]
 
   @@unique([organizationId, name])
   @@map("properties")
@@ -174,6 +178,7 @@ model TenantProfile {
   incidents             Incident[]
   securityDeposits      SecurityDeposit[]
   chatThreads           ChatThread[]
+  inspections           PropertyInspection[]
 
   @@map("tenant_profiles")
 }
@@ -224,6 +229,7 @@ model Contract {
   accountingTransactions AccountingTransaction[]
   securityDeposit        SecurityDeposit?
   chatThreads            ChatThread[]
+  inspections            PropertyInspection[]
 
   @@map("contracts")
 }
@@ -736,5 +742,65 @@ model ManagementReport {
   updatedAt             DateTime      @updatedAt
 
   @@map("management_reports")
+}
+
+// Property Inspections (États des Lieux - Entrée / Sortie)
+model PropertyInspection {
+  id                        String        @id @default(uuid())
+  inspectionNumber          String        @unique // Format: EDL-YYYY-XXXX
+  type                      String        // 'entry' (Entrée) | 'exit' (Sortie)
+  status                    String        @default("draft") // 'draft', 'completed', 'signed'
+  organizationId            String
+  organization              Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  propertyId                String
+  property                  Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  contractId                String?
+  contract                  Contract?     @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  tenantProfileId           String?
+  tenantProfile             TenantProfile? @relation(fields: [tenantProfileId], references: [id], onDelete: SetNull)
+  inspectorId               String?
+  inspector                 User?         @relation("InspectorUser", fields: [inspectorId], references: [id], onDelete: SetNull)
+  inspectorName             String?
+  inspectionDate            DateTime      @default(now())
+
+  // Compteurs (CIE, SODECI...) & Inventaire des clés
+  meterReadings             Json?         @default("{}") // { electricityMeterNumber, electricityIndex, waterMeterNumber, waterIndex, keysCount, keysDetail }
+
+  // Pièces & Éléments inspectés: [{ roomName, condition, elements: [{ name, condition, comment, photos: [] }] }]
+  roomsData                 Json          @default("[]")
+
+  generalObservations       String?
+  estimatedDeductionAmount  Decimal?      @default(0) @db.Decimal(15, 2) // Pour EDL de sortie (déduction caution)
+  deductionDetails          String?       // Motif détaillé des retenues sur caution
+
+  // Signatures contradictoires
+  inspectorSignature        String?       // Base64 ou URL
+  inspectorSignedAt         DateTime?
+  tenantSignature           String?       // Base64 ou URL
+  tenantSignedAt            DateTime?
+
+  pdfUrl                    String?
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
+
+  @@map("property_inspections")
+}
+
+// WhatsApp Activity & Dispatch Logs
+model WhatsAppLog {
+  id             String        @id @default(uuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recipientPhone String
+  recipientName  String?
+  templateType   String        // 'invoice_due', 'overdue_reminder', 'receipt_confirmation', 'custom'
+  messageContent String
+  status         String        @default("sent") // 'sent', 'delivered', 'failed', 'direct_link_opened'
+  relatedEntity  String?       // 'invoice', 'payment', 'contract', 'inspection'
+  relatedId      String?
+  sentById       String?
+  createdAt      DateTime      @default(now())
+
+  @@map("whatsapp_logs")
 }
 
