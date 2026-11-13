@@ -45,7 +45,7 @@ router.delete(
 // --- MON ABONNEMENT ---
 router.get(
   '/me',
-  authorize('owner', 'admin'),
+  authorize('owner', 'admin', 'manager', 'accountant', 'technician'),
   subscriptionsController.getMySubscription
 );
 
@@ -66,7 +66,7 @@ router.post(
 
 router.get(
   '/payments/history',
-  authorize('owner', 'admin'),
+  authorize('owner', 'admin', 'accountant'),
   subscriptionsController.getPaymentsHistory
 );
 
