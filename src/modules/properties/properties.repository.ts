@@ -57,9 +57,48 @@ export class PropertiesRepository {
         take: limit,
         orderBy: { [sortBy || 'createdAt']: (sortOrder || 'ASC').toLowerCase() as 'asc' | 'desc' },
         include: {
-          parent: { select: { id: true, name: true, type: true } },
+          parent: { select: { id: true, name: true, type: true, address: true, city: true } },
+          children: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              floor: true,
+              areaSqm: true,
+              status: true,
+              rentAmount: true,
+              chargesAmount: true,
+              managerId: true,
+              manager: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+              contracts: {
+                where: { status: 'active' },
+                select: {
+                  id: true,
+                  contractNumber: true,
+                  tenantProfile: {
+                    select: { id: true, firstName: true, lastName: true, phone: true, email: true },
+                  },
+                },
+              },
+              incidents: {
+                where: { status: { in: ['open', 'in_progress'] } },
+                select: { id: true },
+              },
+            },
+            orderBy: [{ floor: 'asc' }, { name: 'asc' }],
+          },
           manager: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
           landlord: { select: { id: true, firstName: true, lastName: true, companyName: true, type: true } },
+          contracts: {
+            where: { status: 'active' },
+            select: {
+              id: true,
+              contractNumber: true,
+              tenantProfile: {
+                select: { id: true, firstName: true, lastName: true, phone: true, email: true },
+              },
+            },
+          },
         },
       }),
       prisma.property.count({ where }),
