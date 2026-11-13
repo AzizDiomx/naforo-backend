@@ -224,6 +224,7 @@ export class ManagementReportsService {
           phone: organization.phone,
           address: organization.address,
           city: organization.city,
+          primaryColor: organization.primaryColor,
         },
         landlord: {
           displayName: landlordDisplayName,

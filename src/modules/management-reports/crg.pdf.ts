@@ -23,6 +23,7 @@ export interface CrgPdfData {
     phone?: string | null;
     address?: string | null;
     city?: string | null;
+    primaryColor?: string | null;
   };
   landlord: {
     displayName: string;
@@ -85,8 +86,10 @@ export async function generateCrgPdf(data: CrgPdfData): Promise<string> {
       }).format(val).replace('XOF', 'FCFA');
     };
 
+    const primaryColor = data.organization.primaryColor || '#013E37';
+
     // 1. Header Banner
-    doc.rect(40, 40, 515, 65).fill('#013E37');
+    doc.rect(40, 40, 515, 65).fill(primaryColor);
 
     doc.fillColor('#FACC15').fontSize(16).font('Helvetica-Bold')
       .text('COMPTE-RENDU DE GESTION LOCATIVE (CRG)', 55, 54);
@@ -105,7 +108,7 @@ export async function generateCrgPdf(data: CrgPdfData): Promise<string> {
     let currentY = 120;
     doc.rect(40, currentY, 515, 78).fillAndStroke('#F8FAFC', '#E2E8F0');
 
-    doc.fillColor('#013E37').fontSize(11).font('Helvetica-Bold')
+    doc.fillColor(primaryColor).fontSize(11).font('Helvetica-Bold')
       .text('PROPRIÉTAIRE MANDANT', 55, currentY + 10);
 
     doc.fillColor('#1F2937').fontSize(10).font('Helvetica-Bold')
@@ -115,7 +118,7 @@ export async function generateCrgPdf(data: CrgPdfData): Promise<string> {
       .text(`Téléphone : ${data.landlord.phone}`, 55, currentY + 42)
       .text(`Email : ${data.landlord.email || 'Non renseigné'}`, 55, currentY + 56);
 
-    doc.fillColor('#013E37').fontSize(11).font('Helvetica-Bold')
+    doc.fillColor(primaryColor).fontSize(11).font('Helvetica-Bold')
       .text('COORDONNÉES DE REVERSEMENT', 320, currentY + 10);
 
     doc.fillColor('#4B5563').fontSize(9).font('Helvetica')
@@ -125,11 +128,11 @@ export async function generateCrgPdf(data: CrgPdfData): Promise<string> {
 
     // 3. Section: Rents Collected
     currentY += 95;
-    doc.fillColor('#013E37').fontSize(11).font('Helvetica-Bold')
+    doc.fillColor(primaryColor).fontSize(11).font('Helvetica-Bold')
       .text('1. ÉTAT DES ENCAISSEMENTS LOCATIFS DU MOIS', 40, currentY);
 
     currentY += 16;
-    doc.rect(40, currentY, 515, 20).fill('#013E37');
+    doc.rect(40, currentY, 515, 20).fill(primaryColor);
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold')
       .text('BIEN / LOGEMENT', 48, currentY + 6)
       .text('LOCATAIRE', 180, currentY + 6)
@@ -153,7 +156,7 @@ export async function generateCrgPdf(data: CrgPdfData): Promise<string> {
           .text(r.tenantName, 180, currentY + 6, { width: 150, lineBreak: false })
           .text(r.receiptNumber || r.paymentDate || 'Validé', 340, currentY + 6, { width: 95, lineBreak: false });
 
-        doc.fillColor('#013E37').font('Helvetica-Bold')
+        doc.fillColor(primaryColor).font('Helvetica-Bold')
           .text(formatCurrency(r.amount), 440, currentY + 6, { align: 'right', width: 105 });
 
         currentY += 20;
@@ -169,7 +172,7 @@ export async function generateCrgPdf(data: CrgPdfData): Promise<string> {
     currentY += 32;
 
     // 4. Section: Maintenance & Deductions
-    doc.fillColor('#013E37').fontSize(11).font('Helvetica-Bold')
+    doc.fillColor(primaryColor).fontSize(11).font('Helvetica-Bold')
       .text('2. TRAVAUX, RÉPARATIONS & DÉDUCTIONS DÉTAILLÉES', 40, currentY);
 
     currentY += 16;
@@ -221,9 +224,9 @@ export async function generateCrgPdf(data: CrgPdfData): Promise<string> {
     currentY += 34;
 
     // 5. Financial Synthesis Box (Grand Total Box)
-    doc.rect(260, currentY, 295, 120).fillAndStroke('#F8FAFC', '#013E37');
+    doc.rect(260, currentY, 295, 120).fillAndStroke('#F8FAFC', primaryColor);
 
-    doc.fillColor('#013E37').fontSize(10).font('Helvetica-Bold')
+    doc.fillColor(primaryColor).fontSize(10).font('Helvetica-Bold')
       .text('RÉCAPITULATIF FINANCIER & REVERSEMENT', 275, currentY + 10);
 
     doc.fillColor('#4B5563').fontSize(9).font('Helvetica')

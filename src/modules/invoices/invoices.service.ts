@@ -316,9 +316,14 @@ export class InvoicesService {
     const writeStream = fs.createWriteStream(absolutePath);
     doc.pipe(writeStream);
 
-    // 1. Header (Naforo Branding & Logo) - Vert Forêt Émeraude (#013E37)
-    doc.fillColor('#013E37').fontSize(24).font('Helvetica-Bold').text('Naforo', 50, 45);
-    doc.fillColor('#64748b').fontSize(9).font('Helvetica').text('Plateforme Intelligente de Gestion Locative', 50, 70);
+    // 1. Header (Agency White-Label Branding or Default Naforo)
+    const isWhiteLabel = invoice.organization.whiteLabelEnabled !== false;
+    const brandColor = (isWhiteLabel && invoice.organization.primaryColor) ? invoice.organization.primaryColor : '#013E37';
+    const brandName = (isWhiteLabel && invoice.organization.name) ? invoice.organization.name : 'Naforo';
+    const brandTagline = (isWhiteLabel && invoice.organization.tagline) ? invoice.organization.tagline : 'Plateforme Intelligente de Gestion Locative';
+
+    doc.fillColor(brandColor).fontSize(22).font('Helvetica-Bold').text(brandName, 50, 45);
+    doc.fillColor('#64748b').fontSize(9).font('Helvetica').text(brandTagline, 50, 70);
 
     // Organization info
     doc.fillColor('#0f172a').fontSize(10).font('Helvetica-Bold').text(invoice.organization.name, 400, 45, { align: 'right' });

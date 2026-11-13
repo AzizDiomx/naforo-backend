@@ -3,6 +3,8 @@ import { organizationsService } from './organizations.service';
 import { sendSuccess, sendPaginated, asyncHandler } from '@/shared/helpers/response';
 import { getPaginationParams } from '@/shared/helpers/pagination';
 import { ForbiddenError, BadRequestError } from '@/shared/errors/AppError';
+import { saveFileToDatabase } from '@/shared/helpers/file-storage';
+import { logger } from '@/config/logger';
 
 export const getAllOrganizations = asyncHandler(async (req: Request, res: Response) => {
   const queryParams = getPaginationParams(req);
@@ -100,6 +102,10 @@ export const uploadStamp = asyncHandler(async (req: Request, res: Response) => {
   if (!file) throw new BadRequestError('Aucun fichier fourni pour le cachet.');
 
   const stampUrl = `/uploads/${file.filename}`;
+  await saveFileToDatabase(file.filename, file.path, file.mimetype, file.originalname, file.size).catch((e) =>
+    logger.warn('Sauvegarde BDD stamp échouée:', e)
+  );
+
   const updated = await organizationsService.uploadStamp(targetId, stampUrl);
   return sendSuccess(res, updated, 'Cachet officiel enregistré avec succès.');
 });
@@ -114,6 +120,10 @@ export const uploadLogo = asyncHandler(async (req: Request, res: Response) => {
   if (!file) throw new BadRequestError('Aucun fichier fourni pour le logo.');
 
   const logoUrl = `/uploads/${file.filename}`;
+  await saveFileToDatabase(file.filename, file.path, file.mimetype, file.originalname, file.size).catch((e) =>
+    logger.warn('Sauvegarde BDD logo échouée:', e)
+  );
+
   const updated = await organizationsService.uploadLogo(targetId, logoUrl);
   return sendSuccess(res, updated, 'Logo de marque enregistré avec succès.');
 });
