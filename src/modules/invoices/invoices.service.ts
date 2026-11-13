@@ -108,8 +108,8 @@ export class InvoicesService {
   }
 
   async createInvoice(data: any, organizationId: string): Promise<Invoice> {
-    const periodMonth = Number(data.periodMonth);
-    const periodYear = Number(data.periodYear);
+    const periodMonth = Number(data.periodMonth ?? data.month ?? (new Date().getMonth() + 1));
+    const periodYear = Number(data.periodYear ?? data.year ?? new Date().getFullYear());
 
     // Vérifier l'absence de doublon actif
     const exists = await invoicesRepository.existsForPeriod(data.contractId, periodMonth, periodYear);

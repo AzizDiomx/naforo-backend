@@ -16,7 +16,7 @@ export const UpdateUserSchema = z.object({
     firstName: z.string().min(2, 'Le prénom doit contenir au moins 2 caractères.').optional(),
     lastName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères.').optional(),
     phone: z.string().min(8, 'Le numéro de téléphone doit contenir au moins 8 chiffres.').optional(),
-    avatarUrl: z.string().url('L\'URL de l\'avatar doit être valide.').optional().nullable(),
+    avatarUrl: z.string().or(z.literal('')).optional().nullable().transform((v) => v || null),
     isActive: z.boolean().optional(),
   }),
 });
@@ -32,7 +32,7 @@ export const CreateManagerSchema = z.object({
     firstName: z.string().min(2, 'Le prénom doit contenir au moins 2 caractères.'),
     lastName: z.string().min(2, 'Le nom doit contenir au moins 2 caractères.'),
     email: z.string().email('Format d\'adresse email invalide.'),
-    phone: z.string().optional().nullable(),
+    phone: z.string().or(z.literal('')).optional().nullable().transform((v) => v || null),
     password: z.string().min(6, 'Le mot de passe doit contenir au moins 6 caractères.').optional(),
     role: z.enum(['manager', 'accountant', 'admin']).default('manager'),
     propertyIds: z.array(z.string().uuid()).optional().default([]),
