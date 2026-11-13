@@ -24,13 +24,13 @@ router.use(checkSubscription);
 
 router.get(
   '/', 
-  authorize('admin', 'manager', 'owner', 'technician'), 
+  authorize('admin', 'manager', 'owner', 'technician', 'accountant'), 
   incidentsController.getAllIncidents
 );
 
 router.get(
   '/stats', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   incidentsController.getStats
 );
 
@@ -63,13 +63,13 @@ router.post(
 
 router.get(
   '/:id', 
-  authorize('admin', 'manager', 'owner', 'technician', 'tenant'), 
+  authorize('admin', 'manager', 'owner', 'technician', 'tenant', 'accountant'), 
   incidentsController.getIncidentById
 );
 
 router.post(
   '/', 
-  authorize('tenant', 'admin', 'manager', 'owner'), 
+  authorize('tenant', 'admin', 'manager', 'owner', 'accountant'), 
   validate(CreateIncidentSchema), 
   auditLog('CREATE_INCIDENT', 'Incident'),
   incidentsController.createIncident
@@ -77,7 +77,7 @@ router.post(
 
 router.put(
   '/:id', 
-  authorize('admin', 'manager', 'owner', 'technician'), 
+  authorize('admin', 'manager', 'owner', 'technician', 'accountant'), 
   validate(UpdateIncidentSchema), 
   auditLog('UPDATE_INCIDENT', 'Incident'),
   incidentsController.updateIncident
@@ -85,7 +85,7 @@ router.put(
 
 router.put(
   '/:id/status', 
-  authorize('admin', 'manager', 'owner', 'technician'), 
+  authorize('admin', 'manager', 'owner', 'technician', 'accountant'), 
   auditLog('UPDATE_INCIDENT_STATUS', 'Incident'),
   incidentsController.updateIncidentStatus
 );
@@ -99,7 +99,7 @@ router.post(
 
 router.post(
   '/:id/resolve', 
-  authorize('admin', 'manager', 'technician'), 
+  authorize('admin', 'manager', 'technician', 'accountant'), 
   validate(ResolveIncidentSchema), 
   auditLog('RESOLVE_INCIDENT', 'Incident'),
   incidentsController.resolveIncident
