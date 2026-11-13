@@ -16,7 +16,7 @@ router.use(checkSubscription);
 // --- Transactions & Dépenses ---
 router.post(
   '/expenses',
-  authorize('admin', 'manager', 'owner'),
+  authorize('admin', 'manager', 'owner', 'accountant'),
   validate(CreateExpenseSchema),
   accountingController.createExpense
 );
@@ -58,19 +58,19 @@ router.get(
 // --- Dépôts de garantie (Cautions) ---
 router.post(
   '/contract/:contractId/deposit',
-  authorize('admin', 'manager', 'owner'),
+  authorize('admin', 'manager', 'owner', 'accountant'),
   accountingController.createDeposit
 );
 
 router.get(
   '/contract/:contractId/deposit',
-  authorize('admin', 'manager', 'owner', 'tenant'),
+  authorize('admin', 'manager', 'owner', 'accountant', 'tenant'),
   accountingController.getDeposit
 );
 
 router.put(
   '/contract/:contractId/deposit/return',
-  authorize('admin', 'manager', 'owner'),
+  authorize('admin', 'manager', 'owner', 'accountant'),
   validate(ReturnDepositSchema),
   accountingController.processDepositReturn
 );

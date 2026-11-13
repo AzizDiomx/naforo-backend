@@ -18,7 +18,7 @@ router.use(checkSubscription);
 
 router.get(
   '/', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   tenantProfilesController.getAllTenantProfiles
 );
 
@@ -32,7 +32,7 @@ router.post(
 
 router.get(
   '/:id', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   tenantProfilesController.getTenantProfileById
 );
 

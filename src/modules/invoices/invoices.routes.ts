@@ -34,7 +34,7 @@ router.get(
 
 router.post(
   '/', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   validate(CreateInvoiceSchema), 
   auditLog('CREATE_INVOICE', 'Invoice'),
   invoicesController.createInvoice
@@ -49,7 +49,7 @@ router.post(
 
 router.post(
   '/generate-monthly',
-  authorize('admin', 'manager', 'owner'),
+  authorize('admin', 'manager', 'owner', 'accountant'),
   auditLog('GENERATE_MONTHLY_INVOICES', 'Invoice'),
   invoicesController.generateMonthlyInvoices
 );
@@ -71,7 +71,7 @@ router.post(
 
 router.put(
   '/:id/cancel', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   auditLog('CANCEL_INVOICE', 'Invoice'),
   invoicesController.cancelInvoice
 );

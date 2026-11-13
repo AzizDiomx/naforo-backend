@@ -42,7 +42,7 @@ router.get(
 
 router.post(
   '/', 
-  authorize('tenant', 'admin', 'manager', 'owner'), 
+  authorize('tenant', 'admin', 'manager', 'owner', 'accountant'), 
   validate(DeclarePaymentSchema), 
   auditLog('DECLARE_PAYMENT', 'Payment'),
   paymentsController.declarePayment
@@ -50,7 +50,7 @@ router.post(
 
 router.post(
   '/:id/proof', 
-  authorize('tenant', 'admin', 'manager', 'owner'), 
+  authorize('tenant', 'admin', 'manager', 'owner', 'accountant'), 
   uploadSingle('proof'), 
   auditLog('UPLOAD_PAYMENT_PROOF', 'Payment'),
   paymentsController.uploadProof

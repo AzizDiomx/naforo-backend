@@ -22,38 +22,38 @@ router.use(checkSubscription);
 
 router.get(
   '/', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   propertiesController.getAllProperties
 );
 
 router.get(
   '/available', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   propertiesController.getAvailableProperties
 );
 
 router.get(
   '/stats', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   propertiesController.getStats
 );
 
 router.get(
   '/lots', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   propertiesController.getLots
 );
 
 router.get(
   '/statistics/advanced', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   requirePlanFeature('advanced_stats', 'Statistiques avancées par lot & bien'),
   propertiesController.getAdvancedLotStatistics
 );
 
 router.get(
   '/:id', 
-  authorize('admin', 'manager', 'owner', 'tenant'), 
+  authorize('admin', 'manager', 'owner', 'tenant', 'accountant'), 
   propertiesController.getPropertyById
 );
 

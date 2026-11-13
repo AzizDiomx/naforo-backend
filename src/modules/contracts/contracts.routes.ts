@@ -23,25 +23,25 @@ router.use(checkSubscription);
 
 router.get(
   '/', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   contractsController.getAllContracts
 );
 
 router.get(
   '/expiring-soon', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   contractsController.getExpiringSoon
 );
 
 router.get(
   '/stats', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   contractsController.getStats
 );
 
 router.get(
   '/:id', 
-  authorize('admin', 'manager', 'owner', 'tenant'), 
+  authorize('admin', 'manager', 'owner', 'tenant', 'accountant'), 
   contractsController.getContractById
 );
 
@@ -71,7 +71,7 @@ router.post(
 
 router.get(
   '/:id/pdf',
-  authorize('admin', 'manager', 'owner', 'tenant'),
+  authorize('admin', 'manager', 'owner', 'tenant', 'accountant'),
   contractsController.generatePdf
 );
 

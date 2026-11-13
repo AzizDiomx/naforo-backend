@@ -287,6 +287,14 @@ export class UsersService {
         },
         data: { managerId: user.id },
       });
+      // Synchroniser également les sous-unités des lots attribués
+      await prisma.property.updateMany({
+        where: {
+          parentId: { in: data.propertyIds },
+          organizationId,
+        },
+        data: { managerId: user.id },
+      });
     }
 
     // Send welcome email with credentials
@@ -335,6 +343,14 @@ export class UsersService {
       await prisma.property.updateMany({
         where: {
           id: { in: propertyIds },
+          organizationId,
+        },
+        data: { managerId },
+      });
+      // Synchroniser également les sous-unités des lots attribués
+      await prisma.property.updateMany({
+        where: {
+          parentId: { in: propertyIds },
           organizationId,
         },
         data: { managerId },
