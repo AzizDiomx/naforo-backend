@@ -51,6 +51,14 @@ router.put(
   landlordsController.assignProperties
 );
 
+router.post(
+  '/:id/properties',
+  authorize('admin', 'owner'),
+  validate(AssignPropertiesSchema),
+  auditLog('ASSIGN_LANDLORD_PROPERTIES', 'Landlord'),
+  landlordsController.assignProperties
+);
+
 router.delete(
   '/:id',
   authorize('admin', 'owner'),
