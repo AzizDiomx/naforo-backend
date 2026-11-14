@@ -1,5 +1,6 @@
 import { prisma } from '@/config/database';
-import { BadRequestError, NotFoundError } from '@/shared/errors/AppError';
+import { BadRequestError, ForbiddenError, NotFoundError } from '@/shared/errors/AppError';
+import { getOrganizationPlanContext, getPlanExtendedQuotas } from '@/shared/helpers/plan-policy';
 import {
   sendWhatsAppMessage,
   generateWhatsAppLink,
@@ -129,6 +130,23 @@ export const whatsappService = {
   }) {
     if (!data.recipientPhone || !data.message) {
       throw new BadRequestError('Numéro de téléphone et message obligatoires.');
+    }
+
+    // Contrôle du quota mensuel WhatsApp du forfait
+    const ctx = await getOrganizationPlanContext(data.organizationId);
+    const { maxWhatsappMonthly } = getPlanExtendedQuotas(ctx.planCode, ctx.features);
+    if (maxWhatsappMonthly < 9999) {
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      const sentThisMonth = await prisma.whatsAppLog.count({
+        where: { organizationId: data.organizationId, createdAt: { gte: monthStart } },
+      });
+      if (sentThisMonth >= maxWhatsappMonthly) {
+        throw new ForbiddenError(
+          `Quota mensuel de relances WhatsApp atteint (${sentThisMonth}/${maxWhatsappMonthly}) pour votre forfait ${ctx.planName}.`
+        );
+      }
     }
 
     const sendResult = await sendWhatsAppMessage(data.recipientPhone, data.message);

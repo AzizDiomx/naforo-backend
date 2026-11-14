@@ -9,7 +9,7 @@ import { sendMail } from '@/config/mailer';
 import { logger } from '@/config/logger';
 import { PaginationQuery, PaginationMeta } from '@/shared/types';
 import { buildPaginationMeta } from '@/shared/helpers/pagination';
-import { getOrganizationPlanContext, planIncludesFeature } from '@/shared/helpers/plan-policy';
+import { getOrganizationPlanContext, getPlanExtendedQuotas, planIncludesFeature } from '@/shared/helpers/plan-policy';
 
 export class UsersService {
   async getAllUsers(
@@ -29,26 +29,30 @@ export class UsersService {
     return user;
   }
 
+  private async enforceStaffQuota(organizationId: string): Promise<void> {
+    const ctx = await getOrganizationPlanContext(organizationId);
+    const { maxStaff } = getPlanExtendedQuotas(ctx.planCode, ctx.features);
+    if (maxStaff >= 9999) return;
+
+    const staffCount = await prisma.user.count({
+      where: {
+        organizationId,
+        isActive: true,
+        role: { in: ['admin', 'manager', 'accountant', 'owner', 'technician'] },
+      },
+    });
+
+    if (staffCount >= maxStaff) {
+      throw new ForbiddenError(
+        `Quota d'équipe atteint : votre formule actuelle (${ctx.planName}) est limitée à ${maxStaff} collaborateur(s) actif(s). Veuillez surclasser votre abonnement pour ajouter d'autres membres.`
+      );
+    }
+  }
+
   async createUser(data: any, organizationId: string): Promise<User> {
     // Contrôle du multi-utilisateurs selon l'abonnement (rôles staff/gestion)
     if (data.role !== 'tenant') {
-      const ctx = await getOrganizationPlanContext(organizationId);
-      const hasMultiUsers = planIncludesFeature(ctx.planCode, ctx.features, 'multi_users');
-      if (!hasMultiUsers) {
-        const staffCount = await prisma.user.count({
-          where: {
-            organizationId,
-            role: { in: ['admin', 'manager', 'accountant', 'owner'] },
-          },
-        });
-
-        const maxStaff = ctx.planCode.includes('pro') ? 2 : 1;
-        if (staffCount >= maxStaff) {
-          throw new ForbiddenError(
-            `La création de collaborateurs supplémentaires requiert la formule Expert / Agence (Option Multi-Gestionnaires). Votre formule actuelle (${ctx.planName}) est limitée à ${maxStaff} accès gestionnaire.`
-          );
-        }
-      }
+      await this.enforceStaffQuota(organizationId);
     }
 
     // Check if email already taken
@@ -236,23 +240,7 @@ export class UsersService {
   }
 
   async createManager(organizationId: string, data: any): Promise<any> {
-    const ctx = await getOrganizationPlanContext(organizationId);
-    const hasMultiUsers = planIncludesFeature(ctx.planCode, ctx.features, 'multi_users');
-    if (!hasMultiUsers) {
-      const staffCount = await prisma.user.count({
-        where: {
-          organizationId,
-          role: { in: ['admin', 'manager', 'accountant', 'owner'] },
-        },
-      });
-
-      const maxStaff = ctx.planCode.includes('pro') ? 2 : 1;
-      if (staffCount >= maxStaff) {
-        throw new ForbiddenError(
-          `La création de collaborateurs supplémentaires requiert la formule Expert / Entreprise (Option Multi-Gestionnaires). Votre formule actuelle (${ctx.planName}) est limitée à ${maxStaff} accès gestionnaire.`
-        );
-      }
-    }
+    await this.enforceStaffQuota(organizationId);
 
     const existing = await authRepository.findByEmail(data.email);
     if (existing) {

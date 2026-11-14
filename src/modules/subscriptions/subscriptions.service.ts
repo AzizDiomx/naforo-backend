@@ -16,6 +16,7 @@ import {
   DEFAULT_PLAN_QUOTAS,
   computeStarterTrialEnd,
   getOrganizationUsage,
+  getPlanExtendedQuotas,
   parsePlanFeatures,
   planIncludesFeature,
 } from '@/shared/helpers/plan-policy';
@@ -278,6 +279,8 @@ export class SubscriptionsService {
       featuresList = [];
     }
 
+    const extQuotas = getPlanExtendedQuotas(subscription.plan.code, featuresList);
+
     return {
       id: subscription.id,
       planName: subscription.plan.name,
@@ -323,6 +326,21 @@ export class SubscriptionsService {
           max: subscription.plan.maxTenants,
           reached: tenantCount >= subscription.plan.maxTenants,
         },
+        staff: {
+          used: usage.staff,
+          max: extQuotas.maxStaff,
+          reached: extQuotas.maxStaff < 9999 && usage.staff >= extQuotas.maxStaff,
+        },
+        landlords: {
+          used: usage.landlords,
+          max: extQuotas.maxLandlords,
+          reached: extQuotas.maxLandlords < 9999 && usage.landlords >= extQuotas.maxLandlords,
+        },
+        whatsappMonthly: {
+          used: usage.whatsappMonthly,
+          max: extQuotas.maxWhatsappMonthly,
+          reached: extQuotas.maxWhatsappMonthly < 9999 && usage.whatsappMonthly >= extQuotas.maxWhatsappMonthly,
+        },
       },
       features: featuresList,
     };
@@ -355,8 +373,7 @@ export class SubscriptionsService {
       },
     });
     const targetFeatures = parsePlanFeatures(plan.features);
-    const targetHasMultiUsers = planIncludesFeature(plan.code, targetFeatures, 'multi_users');
-    const targetMaxStaff = targetHasMultiUsers ? 9999 : (plan.code.toLowerCase().includes('pro') ? 2 : 1);
+    const { maxStaff: targetMaxStaff } = getPlanExtendedQuotas(plan.code, targetFeatures);
 
     const exceeded: string[] = [];
     if (plan.maxProperties < 9999 && usage.properties > plan.maxProperties) {
@@ -368,7 +385,7 @@ export class SubscriptionsService {
     if (plan.maxTenants < 9999 && usage.tenants > plan.maxTenants) {
       exceeded.push(`${usage.tenants} locataire(s) actif(s) pour un maximum de ${plan.maxTenants}`);
     }
-    if (!targetHasMultiUsers && activeStaffCount > targetMaxStaff) {
+    if (targetMaxStaff < 9999 && activeStaffCount > targetMaxStaff) {
       exceeded.push(`${activeStaffCount} collaborateur(s) actif(s) pour un maximum de ${targetMaxStaff}`);
     }
 

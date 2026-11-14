@@ -97,6 +97,38 @@ export const DEFAULT_PLAN_QUOTAS: Record<string, { maxProperties: number; maxLot
   expert: { maxProperties: 9999, maxLots: 9999, maxTenants: 9999 },
 };
 
+/** Quotas étendus par défaut (pilotables via `quota:<key>:<val>` dans plan.features sans migration SQL). */
+export const DEFAULT_EXTENDED_QUOTAS: Record<string, { maxStaff: number; maxWhatsappMonthly: number; maxLandlords: number; maxStorageMb: number }> = {
+  starter: { maxStaff: 1, maxWhatsappMonthly: 0, maxLandlords: 0, maxStorageMb: 100 },
+  pro: { maxStaff: 2, maxWhatsappMonthly: 100, maxLandlords: 5, maxStorageMb: 2048 },
+  expert: { maxStaff: 9999, maxWhatsappMonthly: 1000, maxLandlords: 9999, maxStorageMb: 10240 },
+};
+
+/** Extrait les quotas étendus d'un forfait (surcharges JSON `quota:*` ou valeurs par défaut). */
+export function getPlanExtendedQuotas(planCode: string | undefined | null, features: string[]) {
+  const code = (planCode || '').toLowerCase();
+  const baseKey = code.includes('expert') || code.includes('agency')
+    ? 'expert'
+    : code.includes('pro')
+      ? 'pro'
+      : 'starter';
+  const defaults = DEFAULT_EXTENDED_QUOTAS[baseKey];
+
+  const extractNum = (key: string, fallback: number): number => {
+    const token = (features || []).find((f) => typeof f === 'string' && f.startsWith(`quota:${key}:`));
+    if (!token) return fallback;
+    const val = Number(token.split(':')[2]);
+    return Number.isFinite(val) && val >= 0 ? val : fallback;
+  };
+
+  return {
+    maxStaff: extractNum('staff', defaults.maxStaff),
+    maxWhatsappMonthly: extractNum('whatsapp', defaults.maxWhatsappMonthly),
+    maxLandlords: extractNum('landlords', defaults.maxLandlords),
+    maxStorageMb: extractNum('storage_mb', defaults.maxStorageMb),
+  };
+}
+
 /** Ajoute des mois calendaires (gère les fins de mois : 31 nov → 30 nov). */
 export function addMonths(date: Date, months: number): Date {
   const result = new Date(date.getTime());
@@ -176,12 +208,30 @@ export async function organizationHasFeature(organizationId: string, featureCode
   return planIncludesFeature(ctx.planCode, ctx.features, featureCode);
 }
 
-/** Consommation actuelle des quotas : lots, biens, locataires. */
+/** Consommation actuelle des quotas : lots, biens, locataires, équipe, bailleurs et WhatsApp mensuel. */
 export async function getOrganizationUsage(organizationId: string) {
-  const [lots, properties, tenants] = await Promise.all([
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+
+  const [lots, properties, tenants, staff, landlords, whatsappMonthly] = await Promise.all([
     prisma.property.count({ where: { organizationId, type: { in: [...LOT_PROPERTY_TYPES] } } }),
     prisma.property.count({ where: { organizationId, type: { notIn: [...LOT_PROPERTY_TYPES] } } }),
     prisma.tenantProfile.count({ where: { organizationId, isActive: true } }),
+    prisma.user.count({
+      where: {
+        organizationId,
+        isActive: true,
+        role: { in: ['admin', 'manager', 'accountant', 'owner', 'technician'] },
+      },
+    }),
+    prisma.landlord.count({ where: { organizationId, isActive: true } }),
+    prisma.whatsAppLog.count({
+      where: {
+        organizationId,
+        createdAt: { gte: monthStart },
+      },
+    }),
   ]);
-  return { lots, properties, tenants };
+  return { lots, properties, tenants, staff, landlords, whatsappMonthly };
 }

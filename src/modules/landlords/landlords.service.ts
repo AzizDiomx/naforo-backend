@@ -1,5 +1,6 @@
 import { prisma } from '@/config/database';
-import { NotFoundError, BadRequestError } from '@/shared/errors/AppError';
+import { NotFoundError, BadRequestError, ForbiddenError } from '@/shared/errors/AppError';
+import { getOrganizationPlanContext, getPlanExtendedQuotas } from '@/shared/helpers/plan-policy';
 import { Landlord, Prisma } from '@prisma/client';
 import { PaginationQuery, PaginationMeta } from '@/shared/types';
 import { buildPaginationMeta } from '@/shared/helpers/pagination';
@@ -181,6 +182,17 @@ export class LandlordsService {
   }
 
   async createLandlord(organizationId: string, data: any): Promise<Landlord> {
+    const ctx = await getOrganizationPlanContext(organizationId);
+    const { maxLandlords } = getPlanExtendedQuotas(ctx.planCode, ctx.features);
+    if (maxLandlords < 9999) {
+      const currentCount = await prisma.landlord.count({ where: { organizationId, isActive: true } });
+      if (currentCount >= maxLandlords) {
+        throw new ForbiddenError(
+          `Quota de bailleurs atteint (${currentCount}/${maxLandlords}) pour votre formule ${ctx.planName}.`
+        );
+      }
+    }
+
     const { propertyIds, ...rest } = data;
 
     const landlord = await prisma.landlord.create({
