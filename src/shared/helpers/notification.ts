@@ -2,6 +2,7 @@ import { sendMail, EmailServiceType } from '@/config/mailer';
 import { sendSMS } from '@/config/sms';
 import { prisma } from '@/config/database';
 import { logger } from '@/config/logger';
+import { getOrganizationPlanContext, planIncludesFeature } from '@/shared/helpers/plan-policy';
 
 export interface DispatchNotificationOptions {
   organizationId?: string;
@@ -24,17 +25,37 @@ export async function dispatchNotification(opts: DispatchNotificationOptions): P
   let sentEmail = false;
   let sentSMS = false;
 
-  // 1. Try sending Email if email is provided
-  if (opts.email) {
+  // 0. Charger les préférences de notification de l'utilisateur si ciblé
+  let userPrefs: { emailEnabled: boolean; smsEnabled: boolean; reminderEnabled: boolean } | null = null;
+  if (opts.userId) {
+    try {
+      userPrefs = await prisma.notificationPreference.findUnique({
+        where: { userId: opts.userId },
+        select: { emailEnabled: true, smsEnabled: true, reminderEnabled: true },
+      });
+    } catch {}
+  }
+
+  const upperType = (opts.type || '').toUpperCase();
+  const isSecurityOrCritical = upperType.includes('PASSWORD') || upperType.includes('SECURITY') || upperType.includes('WELCOME');
+  const isReminder = upperType.includes('REMINDER') || upperType.includes('OVERDUE');
+
+  if (userPrefs && !userPrefs.reminderEnabled && isReminder) {
+    logger.debug(`[Préférences] Rappels désactivés pour l'utilisateur ${opts.userId}, notification ignorée.`);
+    return { sentEmail: false, sentSMS: false };
+  }
+
+  // 1. Try sending Email if email is provided and allowed by user preferences
+  const canSendEmail = isSecurityOrCritical || !userPrefs || userPrefs.emailEnabled;
+  if (opts.email && canSendEmail) {
     try {
       let serviceType: EmailServiceType = opts.service || 'info';
       if (!opts.service) {
-        const t = (opts.type || '').toUpperCase();
-        if (t.includes('PASSWORD') || t.includes('SUBSCRIPTION') || t.includes('SECURITY') || t.includes('ADMIN')) {
+        if (upperType.includes('PASSWORD') || upperType.includes('SUBSCRIPTION') || upperType.includes('SECURITY') || upperType.includes('ADMIN')) {
           serviceType = 'admin';
-        } else if (t.includes('WELCOME') || t.includes('REGISTER') || t.includes('ONBOARDING')) {
+        } else if (upperType.includes('WELCOME') || upperType.includes('REGISTER') || upperType.includes('ONBOARDING')) {
           serviceType = 'contact';
-        } else if (t.includes('INCIDENT') || t.includes('SUPPORT') || t.includes('REJECTED')) {
+        } else if (upperType.includes('INCIDENT') || upperType.includes('SUPPORT') || upperType.includes('REJECTED')) {
           serviceType = 'support';
         } else {
           serviceType = 'info';
@@ -47,47 +68,30 @@ export async function dispatchNotification(opts: DispatchNotificationOptions): P
     }
   }
 
-  // 2. Vérification de l'option SMS selon la formule d'abonnement (sms_whatsapp)
+  // 2. Vérification stricte de l'option SMS selon le forfait en base (sms_whatsapp)
   let allowSMS = false;
   if (opts.organizationId) {
     try {
-      const activeSub = await prisma.subscription.findFirst({
-        where: { organizationId: opts.organizationId },
-        include: { plan: true },
-        orderBy: { endDate: 'desc' },
-      });
-
-      let features: string[] = [];
-      try {
-        features = typeof activeSub?.plan.features === 'string'
-          ? JSON.parse(activeSub.plan.features)
-          : (activeSub?.plan.features as string[]) || [];
-      } catch {
-        features = [];
-      }
-
-      allowSMS = features.includes('sms_whatsapp') || (activeSub?.plan.code || '').includes('pro') || (activeSub?.plan.code || '').includes('expert');
-    } catch (subErr) {
+      const ctx = await getOrganizationPlanContext(opts.organizationId);
+      allowSMS = planIncludesFeature(ctx.planCode, ctx.features, 'sms_whatsapp');
+    } catch {
       allowSMS = false;
     }
   }
 
-  // 3. Déclenchement du SMS uniquement si la formule de l'organisation l'autorise
-  if (allowSMS && opts.phone) {
+  // 3. Déclenchement du SMS si le forfait l'autorise (en repli si l'email échoue, ou si smsEnabled est activé)
+  const shouldSendSms = allowSMS && opts.phone && (!sentEmail || userPrefs?.smsEnabled);
+  if (shouldSendSms) {
     if (!sentEmail) {
       logger.info(`[RELAIS SMS ACTIF] L'email n'a pas pu être transmis à ${opts.email || 'N/A'}. Bascule automatique sur l'envoi SMS à ${opts.phone}...`);
-      try {
-        sentSMS = await sendSMS(opts.phone, opts.smsText);
-      } catch (smsErr) {
-        logger.error(`Dispatch SMS error for ${opts.phone}:`, smsErr);
-      }
-    } else {
-      try {
-        sentSMS = await sendSMS(opts.phone, opts.smsText);
-      } catch (e) {}
+    }
+    try {
+      sentSMS = await sendSMS(opts.phone!, opts.smsText);
+    } catch (smsErr) {
+      logger.error(`Dispatch SMS error for ${opts.phone}:`, smsErr);
     }
   } else if (!allowSMS && opts.phone) {
-    logger.debug(`[SMS Non Autorisé] Organisation ${opts.organizationId} sans option SMS incluse (réservée Pro/Expert).`);
+    logger.debug(`[SMS Non Autorisé] Organisation ${opts.organizationId} sans option sms_whatsapp incluse.`);
   }
 
   // 3. Save notification record in Database table 'notifications' & Broadcast WebSocket
@@ -107,13 +111,12 @@ export async function dispatchNotification(opts: DispatchNotificationOptions): P
       },
     });
 
-    // 4. Instant WebSocket Real-time Broadcast (0ms)
+    // 4. Instant WebSocket Real-time Broadcast (ciblé utilisateur si userId, sinon organisation)
     try {
       const { emitToOrg, emitToUser } = require('@/sockets/socket.handler');
       if (opts.userId) {
         emitToUser(opts.userId, 'notification:new', createdNotif);
-      }
-      if (opts.organizationId) {
+      } else if (opts.organizationId) {
         emitToOrg(opts.organizationId, 'notification:new', createdNotif);
       }
     } catch (wsErr) {}

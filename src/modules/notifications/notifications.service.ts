@@ -14,8 +14,8 @@ export class NotificationsService {
     return notificationsRepository.findByUser(userId, organizationId, query);
   }
 
-  async markAsRead(id: string): Promise<Notification> {
-    return notificationsRepository.markAsRead(id);
+  async markAsRead(id: string, userId: string, userRole: string, organizationId?: string): Promise<Notification> {
+    return notificationsRepository.markAsRead(id, userId, userRole, organizationId);
   }
 
   async markAllAsRead(userId: string, organizationId?: string): Promise<void> {

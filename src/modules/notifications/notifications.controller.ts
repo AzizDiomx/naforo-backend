@@ -15,7 +15,12 @@ export const getUserNotifications = asyncHandler(async (req: Request, res: Respo
 });
 
 export const markAsRead = asyncHandler(async (req: Request, res: Response) => {
-  const notification = await notificationsService.markAsRead(req.params.id);
+  const notification = await notificationsService.markAsRead(
+    req.params.id,
+    req.user!.userId,
+    req.user!.role,
+    req.organizationId
+  );
   return sendSuccess(res, notification, 'Notification marquée comme lue.');
 });
 

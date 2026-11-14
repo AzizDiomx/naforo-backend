@@ -1,6 +1,7 @@
 import { prisma } from '@/config/database';
 import { Notification } from '@prisma/client';
 import { PaginationQuery } from '@/shared/types';
+import { NotFoundError } from '@/shared/errors/AppError';
 
 export class NotificationsRepository {
   async findByUser(userId: string, organizationId?: string, query?: PaginationQuery): Promise<{ notifications: Notification[]; total: number; unreadCount: number }> {
@@ -47,7 +48,22 @@ export class NotificationsRepository {
     return { notifications, total, unreadCount };
   }
 
-  async markAsRead(id: string): Promise<Notification> {
+  async markAsRead(id: string, userId: string, userRole: string, organizationId?: string): Promise<Notification> {
+    if (userRole !== 'super_admin') {
+      const existing = await prisma.notification.findFirst({
+        where: {
+          id,
+          OR: [
+            { userId },
+            ...(organizationId ? [{ organizationId, userId: null }] : []),
+          ],
+        },
+      });
+      if (!existing) {
+        throw new NotFoundError('Notification introuvable ou accès non autorisé.');
+      }
+    }
+
     return prisma.notification.update({
       where: { id },
       data: { isRead: true },
