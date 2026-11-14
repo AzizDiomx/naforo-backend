@@ -23,7 +23,7 @@ router.post(
 
 router.get(
   '/transactions',
-  authorize('super_admin', 'admin', 'manager', 'accountant', 'owner'),
+  authorize('super_admin', 'admin', 'accountant', 'owner'),
   accountingController.getTransactions
 );
 
@@ -42,7 +42,7 @@ router.get(
 
 router.get(
   '/dashboard',
-  authorize('super_admin', 'admin', 'manager', 'accountant', 'owner'),
+  authorize('super_admin', 'admin', 'accountant', 'owner'),
   accountingController.getFinancialDashboard
 );
 
@@ -50,7 +50,7 @@ import { requirePlanFeature } from '@/shared/middlewares/subscription.middleware
 
 router.get(
   '/export/excel',
-  authorize('super_admin', 'admin', 'manager', 'accountant', 'owner'),
+  authorize('super_admin', 'admin', 'accountant', 'owner'),
   requirePlanFeature('excel_export', 'Exports Comptables Excel & Bilans DGI'),
   accountingController.exportExcelReport
 );

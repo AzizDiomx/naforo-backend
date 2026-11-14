@@ -11,7 +11,7 @@ router.use(requireTenant);
 
 router.get(
   '/owner', 
-  authorize('admin', 'manager', 'owner'), 
+  authorize('admin', 'manager', 'owner', 'accountant'), 
   dashboardController.getOwnerDashboard
 );
 
