@@ -16,6 +16,8 @@ import {
   DEFAULT_PLAN_QUOTAS,
   computeStarterTrialEnd,
   getOrganizationUsage,
+  parsePlanFeatures,
+  planIncludesFeature,
 } from '@/shared/helpers/plan-policy';
 
 export class SubscriptionsService {
@@ -341,6 +343,39 @@ export class SubscriptionsService {
     const plan = await subscriptionsRepository.findPlanById(data.planId);
     if (!plan || !plan.isActive) {
       throw new NotFoundError("Le plan sélectionné n'existe pas ou est inactif");
+    }
+
+    // Contrôle préventif en cas de rétrogradation (downgrade) : vérifier que l'usage actuel tient dans le forfait cible
+    const usage = await getOrganizationUsage(organizationId);
+    const activeStaffCount = await prisma.user.count({
+      where: {
+        organizationId,
+        isActive: true,
+        role: { in: ['admin', 'manager', 'accountant', 'owner'] },
+      },
+    });
+    const targetFeatures = parsePlanFeatures(plan.features);
+    const targetHasMultiUsers = planIncludesFeature(plan.code, targetFeatures, 'multi_users');
+    const targetMaxStaff = targetHasMultiUsers ? 9999 : (plan.code.toLowerCase().includes('pro') ? 2 : 1);
+
+    const exceeded: string[] = [];
+    if (plan.maxProperties < 9999 && usage.properties > plan.maxProperties) {
+      exceeded.push(`${usage.properties} bien(s) actif(s) pour un maximum de ${plan.maxProperties}`);
+    }
+    if (plan.maxLots < 9999 && usage.lots > plan.maxLots) {
+      exceeded.push(`${usage.lots} lot(s)/immeuble(s) pour un maximum de ${plan.maxLots}`);
+    }
+    if (plan.maxTenants < 9999 && usage.tenants > plan.maxTenants) {
+      exceeded.push(`${usage.tenants} locataire(s) actif(s) pour un maximum de ${plan.maxTenants}`);
+    }
+    if (!targetHasMultiUsers && activeStaffCount > targetMaxStaff) {
+      exceeded.push(`${activeStaffCount} collaborateur(s) actif(s) pour un maximum de ${targetMaxStaff}`);
+    }
+
+    if (exceeded.length > 0) {
+      throw new BadRequestError(
+        `Impossible de passer au forfait ${plan.name} car votre utilisation actuelle dépasse ses quotas : ${exceeded.join(' ; ')}. Veuillez réduire ou archiver les éléments excédentaires avant de rétrograder.`
+      );
     }
 
     // Calcul du prix final
