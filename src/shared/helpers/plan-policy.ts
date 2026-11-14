@@ -124,14 +124,9 @@ export function parsePlanFeatures(raw: unknown): string[] {
   }
 }
 
-/** Le forfait Expert / Agence inclut automatiquement l'ensemble des modules. */
-export function planIncludesFeature(planCode: string | undefined | null, features: string[], featureCode: string): boolean {
-  const code = (planCode || '').toLowerCase();
-  if (code.includes('expert') || code.includes('agency')) return true;
-  if (features.includes(featureCode)) return true;
-  if (code.includes('pro') && DEFAULT_PLAN_FEATURES.pro.includes(featureCode)) return true;
-  if (code.includes('starter') && DEFAULT_PLAN_FEATURES.starter.includes(featureCode)) return true;
-  return false;
+/** Vérifie strictement si la liste des fonctionnalités du forfait inclut la fonctionnalité demandée. */
+export function planIncludesFeature(_planCode: string | undefined | null, features: string[], featureCode: string): boolean {
+  return Array.isArray(features) && features.includes(featureCode);
 }
 
 export interface OrganizationPlanContext {
@@ -151,20 +146,27 @@ export async function getOrganizationPlanContext(organizationId: string): Promis
   });
 
   let plan: SubscriptionPlan | null = subscription?.plan || null;
+  let fallbackCode = 'starter';
   if (!plan) {
     const org = await prisma.organization.findUnique({
       where: { id: organizationId },
       select: { plan: true },
     });
-    plan = await prisma.subscriptionPlan.findUnique({ where: { code: org?.plan || 'starter' } });
+    fallbackCode = (org?.plan || 'starter').toLowerCase();
+    plan = await prisma.subscriptionPlan.findUnique({ where: { code: fallbackCode } });
   }
+
+  const resolvedCode = (plan?.code || fallbackCode).toLowerCase();
+  const resolvedFeatures = plan
+    ? parsePlanFeatures(plan.features)
+    : DEFAULT_PLAN_FEATURES[resolvedCode] || DEFAULT_PLAN_FEATURES.starter;
 
   return {
     subscription,
     plan,
-    planCode: (plan?.code || 'starter').toLowerCase(),
+    planCode: resolvedCode,
     planName: plan?.name || 'Starter',
-    features: parsePlanFeatures(plan?.features),
+    features: resolvedFeatures,
   };
 }
 
