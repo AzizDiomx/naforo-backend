@@ -17,7 +17,8 @@ export const getAllInvoices = asyncHandler(async (req: Request, res: Response) =
 
   const result = await invoicesService.getAllInvoices(
     req.organizationId!,
-    { ...queryParams, status, contractId, propertyId, tenantProfileId, month, year }
+    { ...queryParams, status, contractId, propertyId, tenantProfileId, month, year },
+    req.user
   );
 
   return sendPaginated(res, result.data, result.meta, 'Factures récupérées avec succès.');

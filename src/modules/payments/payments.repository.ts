@@ -14,7 +14,8 @@ export class PaymentsRepository {
       paymentMethod?: string;
       startDate?: string;
       endDate?: string;
-    }
+    },
+    user?: { role: string; userId: string }
   ): Promise<{ payments: any[]; total: number }> {
     const {
       page,
@@ -38,7 +39,19 @@ export class PaymentsRepository {
       contractId: contractId && contractId !== 'ALL' ? contractId : undefined,
       tenantProfileId: tenantProfileId && tenantProfileId !== 'ALL' ? tenantProfileId : undefined,
       paymentMethod: paymentMethod && paymentMethod !== 'ALL' ? paymentMethod : undefined,
-      contract: propertyId && propertyId !== 'ALL' ? { propertyId } : undefined,
+      contract: {
+        ...(propertyId && propertyId !== 'ALL' ? { propertyId } : {}),
+        ...(user && user.role === 'manager'
+          ? {
+              property: {
+                OR: [
+                  { managerId: user.userId },
+                  { parent: { managerId: user.userId } },
+                ],
+              },
+            }
+          : {}),
+      },
       paymentDate:
         startDate || endDate
           ? {

@@ -13,7 +13,8 @@ export class InvoicesRepository {
       tenantProfileId?: string;
       month?: number;
       year?: number;
-    }
+    },
+    user?: { role: string; userId: string }
   ): Promise<{ invoices: Invoice[]; total: number }> {
     const { page, limit, search, sortBy, sortOrder, status, contractId, propertyId, tenantProfileId, month, year } = options;
     const skip = (page - 1) * limit;
@@ -26,6 +27,16 @@ export class InvoicesRepository {
       tenantProfileId: tenantProfileId || undefined,
       periodMonth: month || undefined,
       periodYear: year || undefined,
+      ...(user && user.role === 'manager'
+        ? {
+            property: {
+              OR: [
+                { managerId: user.userId },
+                { parent: { managerId: user.userId } },
+              ],
+            },
+          }
+        : {}),
       OR: search
         ? [
             { invoiceNumber: { contains: search, mode: 'insensitive' } },

@@ -24,6 +24,11 @@ export const getAllIncidents = asyncHandler(async (req: Request, res: Response) 
 export const getIncidentById = asyncHandler(async (req: Request, res: Response) => {
   const incident = await incidentsService.getIncidentById(req.params.id, req.organizationId!);
 
+  // Access check: technician can only view incidents assigned to them
+  if (req.user!.role === 'technician' && incident.assignedTo !== req.user!.userId) {
+    throw new ForbiddenError('Accès interdit : Cet incident ne vous est pas assigné.');
+  }
+
   // Access check: tenant can only view their own incidents
   if (req.user!.role === 'tenant') {
     const profile = await prisma.tenantProfile.findUnique({

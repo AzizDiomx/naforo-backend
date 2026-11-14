@@ -15,7 +15,8 @@ export const getAllInspections = asyncHandler(async (req: Request, res: Response
 
   const result = await inspectionsService.getAllInspections(
     req.organizationId!,
-    { ...queryParams, type, status, propertyId, contractId, tenantProfileId, search }
+    { ...queryParams, type, status, propertyId, contractId, tenantProfileId, search },
+    req.user
   );
 
   return sendPaginated(res, result.data, result.meta, 'États des lieux récupérés avec succès.');

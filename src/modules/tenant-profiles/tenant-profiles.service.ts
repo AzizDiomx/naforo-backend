@@ -13,9 +13,10 @@ import { env } from '@/config/env';
 export class TenantProfilesService {
   async getAllTenantProfiles(
     organizationId: string,
-    query: PaginationQuery
+    query: PaginationQuery,
+    user?: { role: string; userId: string }
   ): Promise<{ data: TenantProfile[]; meta: PaginationMeta }> {
-    const { tenantProfiles, total } = await tenantProfilesRepository.findAll(organizationId, query);
+    const { tenantProfiles, total } = await tenantProfilesRepository.findAll(organizationId, query, user);
     const meta = buildPaginationMeta(total, query.page, query.limit);
     return { data: tenantProfiles, meta };
   }

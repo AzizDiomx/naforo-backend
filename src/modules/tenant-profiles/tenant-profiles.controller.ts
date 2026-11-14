@@ -5,7 +5,7 @@ import { getPaginationParams } from '@/shared/helpers/pagination';
 
 export const getAllTenantProfiles = asyncHandler(async (req: Request, res: Response) => {
   const queryParams = getPaginationParams(req);
-  const result = await tenantProfilesService.getAllTenantProfiles(req.organizationId!, queryParams);
+  const result = await tenantProfilesService.getAllTenantProfiles(req.organizationId!, queryParams, req.user);
   return sendPaginated(res, result.data, result.meta, 'Profils locataires récupérés.');
 });
 

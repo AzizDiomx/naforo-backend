@@ -29,9 +29,10 @@ export class InspectionsService {
       propertyId?: string;
       contractId?: string;
       tenantProfileId?: string;
-    }
+    },
+    user?: { role: string; userId: string }
   ): Promise<{ data: PropertyInspection[]; meta: PaginationMeta }> {
-    const { inspections, total } = await inspectionsRepository.findAll(organizationId, query);
+    const { inspections, total } = await inspectionsRepository.findAll(organizationId, query, user);
     const meta = buildPaginationMeta(total, query.page, query.limit);
     return { data: inspections, meta };
   }

@@ -54,13 +54,14 @@ export class InvoicesService {
       tenantProfileId?: string;
       month?: number;
       year?: number;
-    }
+    },
+    user?: { role: string; userId: string }
   ): Promise<{ data: any[]; meta: PaginationMeta }> {
     // 1. Mise à jour automatique des retards
     await this.checkAndUpdateOverdueInvoices(organizationId);
 
     // 2. Récupération des factures
-    const { invoices, total } = await invoicesRepository.findAll(organizationId, query);
+    const { invoices, total } = await invoicesRepository.findAll(organizationId, query, user);
 
     // 3. Calcul dynamique du montant payé et du solde restant dû
     const enrichedInvoices = invoices.map((inv: any) => {

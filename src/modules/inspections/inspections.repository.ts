@@ -61,7 +61,8 @@ export class InspectionsRepository {
       propertyId?: string;
       contractId?: string;
       tenantProfileId?: string;
-    }
+    },
+    user?: { role: string; userId: string }
   ): Promise<{ inspections: PropertyInspection[]; total: number }> {
     const { page = 1, limit = 20, type, status, propertyId, contractId, tenantProfileId, search } = query;
     const skip = (page - 1) * limit;
@@ -73,6 +74,16 @@ export class InspectionsRepository {
       ...(propertyId ? { propertyId } : {}),
       ...(contractId ? { contractId } : {}),
       ...(tenantProfileId ? { tenantProfileId } : {}),
+      ...(user && user.role === 'manager'
+        ? {
+            property: {
+              OR: [
+                { managerId: user.userId },
+                { parent: { managerId: user.userId } },
+              ],
+            },
+          }
+        : {}),
       ...(search
         ? {
             OR: [

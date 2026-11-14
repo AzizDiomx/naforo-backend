@@ -38,9 +38,10 @@ export class PaymentsService {
       paymentMethod?: string;
       startDate?: string;
       endDate?: string;
-    }
+    },
+    user?: { role: string; userId: string }
   ): Promise<{ data: any[]; meta: PaginationMeta }> {
-    const { payments, total } = await paymentsRepository.findAll(organizationId, query);
+    const { payments, total } = await paymentsRepository.findAll(organizationId, query, user);
     const meta = buildPaginationMeta(total, query.page, query.limit);
     return { data: payments, meta };
   }

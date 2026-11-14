@@ -32,6 +32,10 @@ export class IncidentsRepository {
       });
     }
 
+    if (user && user.role === 'technician') {
+      andConditions.push({ assignedTo: user.userId });
+    }
+
     if (search) {
       andConditions.push({
         OR: [

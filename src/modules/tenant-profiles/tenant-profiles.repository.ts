@@ -5,7 +5,8 @@ import { PaginationQuery } from '@/shared/types';
 export class TenantProfilesRepository {
   async findAll(
     organizationId: string,
-    options: PaginationQuery
+    options: PaginationQuery,
+    user?: { role: string; userId: string }
   ): Promise<{ tenantProfiles: TenantProfile[]; total: number }> {
     const { page, limit, search, sortBy, sortOrder } = options;
     const skip = (page - 1) * limit;
@@ -13,6 +14,20 @@ export class TenantProfilesRepository {
     const where: Prisma.TenantProfileWhereInput = {
       organizationId,
       isActive: true,
+      ...(user && user.role === 'manager'
+        ? {
+            contracts: {
+              some: {
+                property: {
+                  OR: [
+                    { managerId: user.userId },
+                    { parent: { managerId: user.userId } },
+                  ],
+                },
+              },
+            },
+          }
+        : {}),
       OR: search
         ? [
             { firstName: { contains: search, mode: 'insensitive' } },

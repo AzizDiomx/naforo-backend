@@ -17,7 +17,8 @@ export const getAllPayments = asyncHandler(async (req: Request, res: Response) =
 
   const result = await paymentsService.getAllPayments(
     req.organizationId!,
-    { ...queryParams, status, contractId, propertyId, tenantProfileId, paymentMethod, startDate, endDate }
+    { ...queryParams, status, contractId, propertyId, tenantProfileId, paymentMethod, startDate, endDate },
+    req.user
   );
   
   return sendPaginated(res, result.data, result.meta, 'Paiements récupérés.');
