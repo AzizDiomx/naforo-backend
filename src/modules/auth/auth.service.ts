@@ -37,13 +37,26 @@ export class AuthService {
         ? data.organizationName.trim() 
         : `Gestion ${data.firstName} ${data.lastName}`;
 
+      const onboardingMeta =
+        data.agencyType || data.unitRange || (Array.isArray(data.paymentMethods) && data.paymentMethods.length > 0)
+          ? {
+              onboarding: {
+                ...(data.agencyType ? { agencyType: data.agencyType } : {}),
+                ...(data.unitRange ? { unitRange: data.unitRange } : {}),
+                ...(Array.isArray(data.paymentMethods) ? { paymentMethods: data.paymentMethods } : {}),
+              },
+            }
+          : undefined;
+
       organization = await authRepository.createOrganization({
         name: orgName,
         email: data.email,
         phone: data.phone,
+        ...(data.city ? { city: data.city } : {}),
+        ...(onboardingMeta ? { settings: onboardingMeta } : {}),
       });
 
-      // Créer automatiquement l'abonnement starter gratuit de 60 jours pour l'organisation
+      // Créer automatiquement l'abonnement starter gratuit de 3 mois pour l'organisation
       try {
         const { SubscriptionsService } = require('@/modules/subscriptions/subscriptions.service');
         const subscriptionsService = new SubscriptionsService();

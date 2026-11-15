@@ -14,6 +14,10 @@ export const RegisterSchema = z.object({
         'Le mot de passe doit inclure au moins une majuscule, une minuscule, un chiffre et un caractère spécial.'
       ),
     organizationName: z.string().optional(),
+    city: z.string().trim().max(120).optional(),
+    agencyType: z.string().trim().max(60).optional(),
+    unitRange: z.string().trim().max(40).optional(),
+    paymentMethods: z.array(z.string().trim().max(40)).max(10).optional(),
     // Sécurité : l'inscription publique crée toujours un compte Propriétaire (owner).
     // Les gérants, comptables et locataires sont créés depuis le Backoffice par l'organisation.
     role: z.any().optional().transform(() => 'owner' as const),
