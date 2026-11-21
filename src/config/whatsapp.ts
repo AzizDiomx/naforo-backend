@@ -15,9 +15,12 @@ if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN) {
 
 /**
  * Nettoie et formate le numéro de téléphone pour WhatsApp.
- * Gère notamment les numéros ivoiriens à 10 chiffres (01, 05, 07) et les formats internationaux.
+ * Gère les numéros ivoiriens à 10 chiffres (01, 05, 07) et les formats internationaux.
  */
-export function formatWhatsAppNumber(phone: string): { internationalWithPlus: string; cleanDigits: string } {
+export function formatWhatsAppNumber(phone: string): {
+  internationalWithPlus: string;
+  cleanDigits: string;
+} {
   let cleaned = phone.trim().replace(/[\s\-\.\(\)]/g, '');
 
   if (cleaned.startsWith('00')) {
@@ -32,7 +35,6 @@ export function formatWhatsAppNumber(phone: string): { internationalWithPlus: st
     };
   }
 
-  // Format local ivoirien (10 chiffres commençant par 01, 05, 07, etc.)
   if (/^0[157]\d{8}$/.test(cleaned)) {
     const digits = `225${cleaned}`;
     return {
@@ -41,7 +43,6 @@ export function formatWhatsAppNumber(phone: string): { internationalWithPlus: st
     };
   }
 
-  // Si commence déjà par l'indicatif 225
   if (cleaned.startsWith('225')) {
     return {
       internationalWithPlus: `+${cleaned}`,
@@ -49,7 +50,6 @@ export function formatWhatsAppNumber(phone: string): { internationalWithPlus: st
     };
   }
 
-  // Fallback: supposer Côte d'Ivoire par défaut si 8 ou 10 chiffres
   const digits = cleaned.length <= 10 ? `225${cleaned}` : cleaned;
   return {
     internationalWithPlus: `+${digits}`,
@@ -57,26 +57,37 @@ export function formatWhatsAppNumber(phone: string): { internationalWithPlus: st
   };
 }
 
-/**
- * Génère le lien direct WhatsApp (wa.me) utilisable en 1 clic
- * depuis le navigateur ou l'application mobile sans configuration payante.
- */
 export function generateWhatsAppLink(phone: string, message: string): string {
   const { cleanDigits } = formatWhatsAppNumber(phone);
   return `https://wa.me/${cleanDigits}?text=${encodeURIComponent(message)}`;
 }
 
+export type WhatsAppProvider = 'meta_cloud' | 'twilio' | 'fallback_direct_link';
+
 export interface SendWhatsAppResult {
   success: boolean;
   messageId?: string;
   directWhatsAppUrl: string;
-  provider: 'twilio' | 'fallback_direct_link';
+  provider: WhatsAppProvider;
   error?: string;
 }
 
+export function getConfiguredWhatsAppProvider(): WhatsAppProvider {
+  if (process.env.WHATSAPP_CLOUD_ACCESS_TOKEN && process.env.WHATSAPP_CLOUD_PHONE_ID) {
+    return 'meta_cloud';
+  }
+  const senderNumber = env.TWILIO_WHATSAPP_NUMBER || env.TWILIO_PHONE_NUMBER;
+  if (twilioClient && senderNumber) {
+    return 'twilio';
+  }
+  return 'fallback_direct_link';
+}
+
 /**
- * Envoie un message WhatsApp via l'API Twilio WhatsApp si configurée,
- * sinon génère le lien direct wa.me et journalise l'opération.
+ * Envoie un message WhatsApp :
+ * 1. Meta WhatsApp Cloud API (si WHATSAPP_CLOUD_ACCESS_TOKEN & WHATSAPP_CLOUD_PHONE_ID sont définis)
+ * 2. Twilio WhatsApp API (si TWILIO_ACCOUNT_SID & TWILIO_AUTH_TOKEN sont définis)
+ * 3. Lien direct 1-clic wa.me (fallback universel sans coût par message)
  */
 export async function sendWhatsAppMessage(
   to: string,
@@ -84,8 +95,51 @@ export async function sendWhatsAppMessage(
 ): Promise<SendWhatsAppResult> {
   const { internationalWithPlus, cleanDigits } = formatWhatsAppNumber(to);
   const directLink = `https://wa.me/${cleanDigits}?text=${encodeURIComponent(message)}`;
-  const senderNumber = env.TWILIO_WHATSAPP_NUMBER || env.TWILIO_PHONE_NUMBER;
 
+  const metaToken = process.env.WHATSAPP_CLOUD_ACCESS_TOKEN;
+  const metaPhoneId = process.env.WHATSAPP_CLOUD_PHONE_ID;
+
+  // 1. Meta WhatsApp Cloud API officielle
+  if (metaToken && metaPhoneId) {
+    try {
+      const response = await fetch(
+        `https://graph.facebook.com/v20.0/${metaPhoneId}/messages`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${metaToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            recipient_type: 'individual',
+            to: cleanDigits,
+            type: 'text',
+            text: { preview_url: true, body: message },
+          }),
+        }
+      );
+
+      const data: any = await response.json().catch(() => ({}));
+      if (response.ok && data?.messages?.[0]?.id) {
+        logger.info(`[WHATSAPP META CLOUD] ID: ${data.messages[0].id} -> +${cleanDigits}`);
+        return {
+          success: true,
+          messageId: data.messages[0].id,
+          directWhatsAppUrl: directLink,
+          provider: 'meta_cloud',
+        };
+      }
+      logger.warn(
+        `[WHATSAPP META CLOUD WARN] ${data?.error?.message || response.statusText}. Bascule sur fallback.`
+      );
+    } catch (err: any) {
+      logger.warn(`[WHATSAPP META CLOUD ERROR] ${err.message}. Bascule sur fallback.`);
+    }
+  }
+
+  // 2. Twilio WhatsApp API
+  const senderNumber = env.TWILIO_WHATSAPP_NUMBER || env.TWILIO_PHONE_NUMBER;
   if (twilioClient && senderNumber) {
     try {
       const fromNumber = senderNumber.startsWith('whatsapp:')
@@ -117,18 +171,8 @@ export async function sendWhatsAppMessage(
     }
   }
 
-  // Mode Fallback / Gratuit : Journalisation et mise à disposition immédiate du lien wa.me
-  logger.info(`
-================================================================================
-📱 [WHATSAPP DIRECT DISPATCH - Naforo]
-Destinataire: ${internationalWithPlus}
-Lien direct: ${directLink}
---------------------------------------------------------------------------------
-Message:
-${message}
-================================================================================
-  `);
-
+  // 3. Mode 1-Clic wa.me
+  logger.info(`[WHATSAPP DIRECT LINK] Destinataire: ${internationalWithPlus}`);
   return {
     success: true,
     directWhatsAppUrl: directLink,
@@ -137,7 +181,7 @@ ${message}
 }
 
 /**
- * Modèle de message de relance de facture de loyer
+ * Modèle sobre et structuré de relance de facture de loyer
  */
 export function buildInvoiceReminderTemplate(data: {
   tenantName: string;
@@ -149,39 +193,45 @@ export function buildInvoiceReminderTemplate(data: {
   dueDate: string;
   isOverdue?: boolean;
   daysOverdue?: number;
-  paymentMethods?: string;
   portalUrl?: string;
 }): string {
   const amountStr = new Intl.NumberFormat('fr-FR').format(data.amountXof) + ' FCFA';
-  const prefix = data.isOverdue ? '⚠️ *RAPPEL DE PAIEMENT - ÉCHÉANCE DÉPASSÉE*' : '🔔 *AVIS D\'ÉCHÉANCE DE LOYER*';
-  
-  let header = `${prefix}\n\nBonjour *${data.tenantName}*,\n\n`;
-  header += `Votre gestionnaire *${data.agencyName}* vous informe des détails de votre loyer pour le bien :\n`;
-  header += `🏠 *${data.propertyName}*\n`;
-  header += `📄 Facture N° : *${data.invoiceNumber}*\n`;
-  header += `🗓️ Période : *${data.periodLabel}*\n`;
-  header += `💰 Montant net à régler : *${amountStr}*\n`;
-  header += `⏰ Date limite : *${data.dueDate}*\n`;
+  const title = data.isOverdue
+    ? '*RAPPEL DE LOYER — ÉCHÉANCE DÉPASSÉE*'
+    : "*AVIS D'ÉCHÉANCE DE LOYER*";
+
+  const lines: string[] = [
+    title,
+    '',
+    `Bonjour *${data.tenantName}*,`,
+    '',
+    `Votre gestionnaire *${data.agencyName}* vous transmet le récapitulatif de votre loyer :`,
+    `• Bien : *${data.propertyName}*`,
+    `• Période : *${data.periodLabel}*`,
+    `• Référence : *${data.invoiceNumber}*`,
+    `• Montant à régler : *${amountStr}*`,
+    `• Échéance : *${data.dueDate}*`,
+  ];
 
   if (data.isOverdue && data.daysOverdue && data.daysOverdue > 0) {
-    header += `🚨 Retard constaté : *+${data.daysOverdue} jour(s)*\n`;
+    lines.push(`• Retard constaté : *+${data.daysOverdue} jour(s)*`);
   }
 
-  header += `\n💳 *Modes de paiement acceptés :*\n`;
-  header += `• Wave / Orange Money / MTN MoMo\n`;
-  header += `• Virement bancaire ou paiement en agence\n`;
+  lines.push(
+    '',
+    '*Modes de règlement :* Wave, Orange Money, MTN MoMo ou virement.'
+  );
 
   if (data.portalUrl) {
-    header += `\n👉 Consultez votre facture et quittance : ${data.portalUrl}\n`;
+    lines.push('', `Votre espace locataire : ${data.portalUrl}`);
   }
 
-  header += `\nMerci pour votre confiance.\n_Service Gestion Locative - ${data.agencyName}_`;
-
-  return header;
+  lines.push('', `Cordialement,`, `_${data.agencyName}_`);
+  return lines.join('\n');
 }
 
 /**
- * Modèle de confirmation de réception de paiement
+ * Modèle sobre de confirmation de paiement & quittance certifiée
  */
 export function buildReceiptWhatsAppTemplate(data: {
   tenantName: string;
@@ -193,18 +243,22 @@ export function buildReceiptWhatsAppTemplate(data: {
   receiptUrl?: string;
 }): string {
   const amountStr = new Intl.NumberFormat('fr-FR').format(data.amountPaidXof) + ' FCFA';
-  let message = `✅ *CONFIRMATION DE PAIEMENT & QUITTANCE*\n\n`;
-  message += `Bonjour *${data.tenantName}*,\n\n`;
-  message += `Nous vous confirmons la bonne réception de votre règlement de loyer pour :\n`;
-  message += `🏠 *${data.propertyName}*\n`;
-  message += `🧾 Quittance N° : *${data.receiptNumber}*\n`;
-  message += `💰 Montant réglé : *${amountStr}*\n`;
-  message += `🗓️ Période acquittée : *${data.periodLabel}*\n`;
+  const lines: string[] = [
+    '*CONFIRMATION DE PAIEMENT & QUITTANCE*',
+    '',
+    `Bonjour *${data.tenantName}*,`,
+    '',
+    `Nous vous confirmons la bonne réception de votre règlement de loyer :`,
+    `• Bien : *${data.propertyName}*`,
+    `• Quittance N° : *${data.receiptNumber}*`,
+    `• Montant : *${amountStr}*`,
+    `• Période acquittée : *${data.periodLabel}*`,
+  ];
 
   if (data.receiptUrl) {
-    message += `\n📥 Télécharger votre quittance certifiée : ${data.receiptUrl}\n`;
+    lines.push('', `Télécharger votre quittance certifiée : ${data.receiptUrl}`);
   }
 
-  message += `\nMerci de votre ponctualité.\n_L'équipe ${data.agencyName}_`;
-  return message;
+  lines.push('', `Merci pour votre ponctualité.`, `_${data.agencyName}_`);
+  return lines.join('\n');
 }

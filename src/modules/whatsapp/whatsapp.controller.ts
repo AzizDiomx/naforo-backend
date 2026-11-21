@@ -8,18 +8,38 @@ export const remindInvoice = asyncHandler(async (req: Request, res: Response) =>
     req.params.id,
     req.organizationId!,
     req.user?.userId,
-    req.body
+    {
+      ...req.body,
+      userRole: req.user?.role,
+    }
   );
   return sendSuccess(res, result, 'Relance WhatsApp préparée avec succès.');
 });
 
+export const bulkRemindInvoices = asyncHandler(async (req: Request, res: Response) => {
+  const { invoiceIds, customNote } = req.body || {};
+  const result = await whatsappService.bulkRemindInvoices({
+    organizationId: req.organizationId!,
+    invoiceIds: Array.isArray(invoiceIds) ? invoiceIds : [],
+    sentById: req.user?.userId,
+    userRole: req.user?.role,
+    customNote,
+  });
+  return sendSuccess(
+    res,
+    result,
+    `${result.sentCount} relance(s) WhatsApp préparée(s) avec succès.`
+  );
+});
+
 export const sendCustom = asyncHandler(async (req: Request, res: Response) => {
-  const { recipientPhone, recipientName, message, relatedEntity, relatedId } = req.body;
+  const { recipientPhone, recipientName, message, templateType, relatedEntity, relatedId } = req.body;
   const result = await whatsappService.sendCustomWhatsApp({
     organizationId: req.organizationId!,
     recipientPhone,
     recipientName,
     message,
+    templateType,
     relatedEntity,
     relatedId,
     sentById: req.user?.userId,
