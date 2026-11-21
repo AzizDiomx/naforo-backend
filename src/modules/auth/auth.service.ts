@@ -124,6 +124,30 @@ export class AuthService {
       'admin'
     ).catch((err) => logger.error('Failed to send verification email during registration', err));
 
+    // Alerte email aux administrateurs lors d'une nouvelle création de compte agence
+    await sendMail({
+      to: [
+        'ismael.diomande@uvci.edu.ci',
+        'ismaeldiom70@gmail.com',
+        'aziz.ismael@naforo.company',
+      ],
+      subject: `[Naforo] Nouvelle agence inscrite : ${organization?.name || data.organizationName || data.email}`,
+      service: 'admin',
+      html: `
+        <div style="font-family: Inter, system-ui, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; border: 1px solid #e2e2dc; border-radius: 12px; color: #14221e;">
+          <p style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #5e5b53; margin: 0 0 8px 0;">Nouvelle Inscription · Naforo</p>
+          <h2 style="font-size: 20px; font-weight: 600; color: #01362a; margin: 0 0 16px 0;">${organization?.name || data.organizationName || 'Nouveau compte'}</h2>
+          <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+            <tr><td style="padding: 6px 0; color: #5e5b53;">Responsable</td><td style="padding: 6px 0; font-weight: 600;">${user.firstName} ${user.lastName}</td></tr>
+            <tr><td style="padding: 6px 0; color: #5e5b53;">Email</td><td style="padding: 6px 0;">${user.email}</td></tr>
+            <tr><td style="padding: 6px 0; color: #5e5b53;">Téléphone</td><td style="padding: 6px 0;">${user.phone || '-'}</td></tr>
+            <tr><td style="padding: 6px 0; color: #5e5b53;">Ville / Zone</td><td style="padding: 6px 0;">${data.city || '-'}</td></tr>
+            <tr><td style="padding: 6px 0; color: #5e5b53;">Taille parc</td><td style="padding: 6px 0;">${data.unitRange || '-'}</td></tr>
+          </table>
+        </div>
+      `,
+    }).catch((err) => logger.error('Failed to send new agency admin alert email', err));
+
     return { user, organization, accessToken, refreshToken };
   }
 

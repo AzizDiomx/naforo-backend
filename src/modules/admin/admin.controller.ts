@@ -23,3 +23,24 @@ export const getAuditLogs = asyncHandler(async (req: Request, res: Response) => 
   });
   return sendSuccess(res, result, 'Journaux de la piste d\'audit récupérés.');
 });
+
+export const recordEagenceVisit = asyncHandler(async (req: Request, res: Response) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  const rawIp = Array.isArray(forwarded)
+    ? forwarded[0]
+    : typeof forwarded === 'string'
+      ? forwarded.split(',')[0].trim()
+      : req.ip || req.socket?.remoteAddress || 'unknown';
+
+  const result = await adminService.recordEagenceVisit({
+    ipAddress: rawIp,
+    userAgent: (req.headers['user-agent'] as string) || 'unknown',
+    path: req.body?.path || '/',
+    referrer: req.body?.referrer || '',
+    sessionId: req.body?.sessionId || '',
+    language: req.body?.language || '',
+    screen: req.body?.screen || '',
+  });
+
+  return sendSuccess(res, result, 'Visite enregistrée.');
+});

@@ -8,7 +8,13 @@ import { CreatePlanSchema, DeclareSubscriptionPaymentSchema, ValidateSubscriptio
 
 const router = Router();
 
-// Toutes les routes d'abonnements exigent une authentification
+// Lecture publique des offres d'abonnement (utilisée par naforo-eagence et le Backoffice)
+router.get(
+  '/plans',
+  subscriptionsController.listPlans
+);
+
+// Toutes les autres routes d'abonnements exigent une authentification
 router.use(authenticate);
 
 // --- PLANS ---
@@ -17,11 +23,6 @@ router.post(
   authorize('super_admin'),
   validate(CreatePlanSchema),
   subscriptionsController.createPlan
-);
-
-router.get(
-  '/plans',
-  subscriptionsController.listPlans
 );
 
 router.put(

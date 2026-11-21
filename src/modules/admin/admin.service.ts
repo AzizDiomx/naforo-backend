@@ -1,6 +1,41 @@
 import { prisma } from '@/config/database';
 import { emitToOrg } from '@/sockets/socket.handler';
 import { dispatchNotification } from '@/shared/helpers/notification';
+import { sendMail } from '@/config/mailer';
+import { logger } from '@/config/logger';
+
+export const EAGENCE_ALERT_EMAILS = [
+  'ismael.diomande@uvci.edu.ci',
+  'ismaeldiom70@gmail.com',
+  'aziz.ismael@naforo.company',
+];
+
+export async function getEagenceVisitorStats() {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [totalVisits, todayVisits, thisMonthVisits, distinctIps] = await Promise.all([
+    prisma.auditLog.count({ where: { action: 'EAGENCE_SITE_VISIT' } }),
+    prisma.auditLog.count({
+      where: { action: 'EAGENCE_SITE_VISIT', createdAt: { gte: todayStart } },
+    }),
+    prisma.auditLog.count({
+      where: { action: 'EAGENCE_SITE_VISIT', createdAt: { gte: monthStart } },
+    }),
+    prisma.auditLog.groupBy({
+      by: ['ipAddress'],
+      where: { action: 'EAGENCE_SITE_VISIT' },
+    }),
+  ]);
+
+  return {
+    totalVisits,
+    uniqueVisitors: distinctIps.length,
+    todayVisits,
+    thisMonthVisits,
+  };
+}
 
 export async function getAdvancedStats() {
   const now = new Date();
@@ -220,6 +255,8 @@ export async function getAdvancedStats() {
     // SuperAdmin Pending Actions
     pendingSubscriptionsCount,
     pendingSubscriptionsList,
+    // Audience Site e-Agence
+    eagenceVisitors: await getEagenceVisitorStats(),
     // System Health
     systemHealth: {
       status: 'operational',
@@ -357,4 +394,75 @@ export async function getAuditLogs(options: {
       totalPages: Math.ceil(total / limit)
     }
   };
+}
+
+export async function recordEagenceVisit(input: {
+  ipAddress: string;
+  userAgent: string;
+  path?: string;
+  referrer?: string;
+  sessionId?: string;
+  language?: string;
+  screen?: string;
+}) {
+  const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000);
+
+  const recentVisit = await prisma.auditLog.findFirst({
+    where: {
+      action: 'EAGENCE_SITE_VISIT',
+      ipAddress: input.ipAddress,
+      createdAt: { gte: thirtyMinsAgo },
+    },
+    select: { id: true },
+  });
+
+  if (recentVisit) {
+    const stats = await getEagenceVisitorStats();
+    return { recorded: false, ...stats };
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      action: 'EAGENCE_SITE_VISIT',
+      entityType: 'EAGENCE_SITE',
+      entityId: input.sessionId || null,
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
+      newData: {
+        path: input.path || '/',
+        referrer: input.referrer || 'Direct',
+        language: input.language || '',
+        screen: input.screen || '',
+      },
+    },
+  });
+
+  const stats = await getEagenceVisitorStats();
+  const dateStr = new Date().toLocaleString('fr-FR', { timeZone: 'Africa/Abidjan' });
+
+  await sendMail({
+    to: EAGENCE_ALERT_EMAILS,
+    subject: `[Naforo e-Agence] Nouveau visiteur (#${stats.totalVisits}) sur le site`,
+    service: 'admin',
+    html: `
+      <div style="font-family: Inter, system-ui, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; border: 1px solid #e2e2dc; border-radius: 12px; color: #14221e;">
+        <p style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #5e5b53; margin: 0 0 8px 0;">Alerte Audience · Naforo e-Agence</p>
+        <h2 style="font-size: 20px; font-weight: 600; color: #01362a; margin: 0 0 16px 0;">Nouvelle visite sur naforo.company</h2>
+        <div style="background: #f8f8f6; border: 1px solid #e5e5e0; border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; font-size: 13px; line-height: 1.6;">
+          <div><strong>Total visites :</strong> ${stats.totalVisits} (${stats.uniqueVisitors} visiteurs uniques)</div>
+          <div><strong>Aujourd'hui :</strong> ${stats.todayVisits} &nbsp;|&nbsp; <strong>Ce mois :</strong> ${stats.thisMonthVisits}</div>
+        </div>
+        <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+          <tr><td style="padding: 6px 0; color: #5e5b53;">Date (Abidjan)</td><td style="padding: 6px 0; font-weight: 500;">${dateStr}</td></tr>
+          <tr><td style="padding: 6px 0; color: #5e5b53;">Page</td><td style="padding: 6px 0; font-weight: 500;">${input.path || '/'}</td></tr>
+          <tr><td style="padding: 6px 0; color: #5e5b53;">Source / Referrer</td><td style="padding: 6px 0; font-weight: 500;">${input.referrer || 'Accès direct'}</td></tr>
+          <tr><td style="padding: 6px 0; color: #5e5b53;">Adresse IP</td><td style="padding: 6px 0; font-family: monospace;">${input.ipAddress}</td></tr>
+          <tr><td style="padding: 6px 0; color: #5e5b53;">Écran / Langue</td><td style="padding: 6px 0;">${input.screen || '-'} (${input.language || '-'})</td></tr>
+          <tr><td style="padding: 6px 0; color: #5e5b53;">Navigateur</td><td style="padding: 6px 0; font-size: 12px; color: #3a3a3a;">${input.userAgent}</td></tr>
+        </table>
+      </div>
+    `,
+  }).catch((err) => logger.error('Failed to send e-Agence visitor alert email', err));
+
+  return { recorded: true, ...stats };
 }

@@ -6,6 +6,12 @@ import { auditLog } from '@/shared/middlewares/audit.middleware';
 
 const router = Router();
 
+/**
+ * @route   POST /api/v1/admin/public/eagence-visit
+ * @desc    Enregistre une visite sur le site vitrine naforo-eagence et notifie les administrateurs
+ */
+router.post('/public/eagence-visit', adminController.recordEagenceVisit);
+
 router.use(authenticate);
 router.use(authorize('super_admin'));
 
