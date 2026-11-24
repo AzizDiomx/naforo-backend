@@ -502,9 +502,28 @@ export class AuthService {
     if (!user) {
       throw new NotFoundError('Utilisateur introuvable.');
     }
+
+    // Résoudre la signature électronique enregistrée (Organisation ou AuditLog personnel pour Super Admin)
+    let resolvedSignatureUrl: string | null = (user.organization as any)?.signatureUrl || null;
+    if (!resolvedSignatureUrl) {
+      const latestSigLog = await prisma.auditLog.findFirst({
+        where: {
+          userId: user.id,
+          action: 'USER_SIGNATURE_SAVED',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (latestSigLog && latestSigLog.newData && typeof latestSigLog.newData === 'object') {
+        resolvedSignatureUrl = (latestSigLog.newData as any).signatureUrl ?? null;
+      }
+    }
+
     // Ne pas renvoyer le hash du mot de passe
     const { passwordHash, refreshTokenHash, ...userWithoutSecrets } = user;
-    return userWithoutSecrets;
+    return {
+      ...userWithoutSecrets,
+      signatureUrl: resolvedSignatureUrl,
+    };
   }
 
   async updateProfile(userId: string, data: any): Promise<any> {
@@ -519,6 +538,39 @@ export class AuthService {
       lastName: data.lastName || user.lastName,
       phone: data.phone || user.phone,
     });
+
+    // 1b. Mettre à jour la signature électronique (Propriétaire / Admin / Super Administrateur)
+    if (
+      data.signatureUrl !== undefined &&
+      ['owner', 'admin', 'super_admin'].includes(String(user.role))
+    ) {
+      const normalizedSig =
+        typeof data.signatureUrl === 'string' && data.signatureUrl.trim().length > 0
+          ? data.signatureUrl.trim()
+          : null;
+
+      if (user.organizationId) {
+        await prisma.organization.update({
+          where: { id: user.organizationId },
+          data: { signatureUrl: normalizedSig },
+        });
+      }
+
+      await prisma.auditLog.create({
+        data: {
+          organizationId: user.organizationId || null,
+          userId: user.id,
+          action: 'USER_SIGNATURE_SAVED',
+          entityType: 'USER_SIGNATURE',
+          entityId: user.id,
+          newData: {
+            signatureUrl: normalizedSig,
+            role: user.role,
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      });
+    }
 
     // 2. Mettre à jour les préférences de notification
     if (data.preferences) {
