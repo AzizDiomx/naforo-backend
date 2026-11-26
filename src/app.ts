@@ -19,6 +19,8 @@ const app: Express = express();
 
 // Trust reverse proxy (Indispensable sur Vercel, AWS, Cloudflare, etc. pour X-Forwarded-For et rate-limiting)
 app.set('trust proxy', 1);
+// Désactiver les ETags Express (évite les réponses 304 Not Modified qui réutilisent un Access-Control-Allow-Origin mis en cache entre sous-domaines)
+app.set('etag', false);
 
 // 1. Basic security & optimization middlewares
 app.use(helmet());
@@ -114,6 +116,15 @@ const corsMiddleware = cors({
 
 app.use(corsMiddleware);
 app.options('*', corsMiddleware);
+
+// Empêcher tout cache navigateur/CDN de partager un en-tête Access-Control-Allow-Origin entre sous-domaines (*.naforo.company)
+app.use('/api', (_req: Request, res: Response, next: NextFunction) => {
+  res.vary('Origin');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
 
 // 4. Rate Limiters
 const globalLimiter = rateLimit({
