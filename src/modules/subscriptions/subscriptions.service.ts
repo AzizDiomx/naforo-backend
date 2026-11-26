@@ -2,7 +2,7 @@ import { subscriptionsRepository } from './subscriptions.repository';
 import { convertAmountXof } from '@/modules/accounting/accounting.repository';
 import { generateSubscriptionInvoicePdf } from './pdf.generator';
 import { prisma } from '@/config/database';
-import { NotFoundError, BadRequestError, ForbiddenError } from '@/shared/errors/AppError';
+import { NotFoundError, BadRequestError, ForbiddenError, UnauthorizedError } from '@/shared/errors/AppError';
 import { logger } from '@/config/logger';
 import { generateReference } from '@/shared/helpers/crypto';
 import { emailQueue } from '@/queues';
@@ -10,6 +10,11 @@ import path from 'path';
 import { sendMail, subscriptionPaymentApproved } from '@/config/mailer';
 import { formatCurrency, formatDate } from '@/shared/helpers/date';
 import { env } from '@/config/env';
+import {
+  saspayClient,
+  verifySaspayWebhookSignature,
+  mapSaspayStatus,
+} from './saspay.client';
 import {
   STARTER_TRIAL_MONTHS,
   DEFAULT_PLAN_FEATURES,
@@ -395,12 +400,13 @@ export class SubscriptionsService {
       );
     }
 
-    // Calcul du prix final
-    let price = Number(plan.priceMonthlyXof);
-    if (data.billingCycle === 'yearly') {
-      // Forfait annuel : prix mensuel * 12 avec 20% de remise
-      price = price * 12 * 0.8;
-    }
+    // Calcul du prix final directement depuis le forfait en base (SubscriptionPlan)
+    const baseMonthly = Number(plan.priceMonthlyXof);
+    const discountPercent = Number(plan.yearlyDiscountPercent ?? 20);
+    const price =
+      data.billingCycle === 'yearly'
+        ? Math.round(baseMonthly * 12 * (1 - discountPercent / 100))
+        : Math.round(baseMonthly);
 
     // Récupérer l'abonnement actuel sans en modifier le planId
     let activeSub = await subscriptionsRepository.getActiveSubscription(organizationId);
@@ -510,10 +516,25 @@ export class SubscriptionsService {
       return subscriptionsRepository.rejectPayment(paymentId, data.rejectionReason);
     }
 
-    // --- ACTIVATION STRICTE PAR LE SUPERADMIN ---
+    return this.activateSubscriptionPayment(payment, superadminId, 'le super administrateur');
+  }
+
+  /**
+   * Activation atomique & idempotente d'un paiement d'abonnement (Superadmin ou SasPay)
+   * Met à jour le plan, prolonge les dates, génère la facture PDF, envoie l'email et notifie.
+   */
+  private async activateSubscriptionPayment(
+    payment: any,
+    validatedBy: string,
+    sourceLabel: string = 'la passerelle SasPay'
+  ) {
+    if (payment.status === 'validated') {
+      return payment;
+    }
+
     const organizationId = payment.organizationId;
     const activeSub = payment.subscription;
-    
+
     // 1. Déterminer le plan payant à appliquer à partir du targetPlanId déclaré
     let plan = activeSub.plan;
     if (payment.targetPlanId) {
@@ -522,14 +543,18 @@ export class SubscriptionsService {
         plan = targetPlan;
       }
     } else if (plan.code === 'starter') {
-      const proPlan = await subscriptionsRepository.findPlanByCode('pro') || await prisma.subscriptionPlan.findFirst({ where: { code: { not: 'starter' } } });
+      const proPlan =
+        (await subscriptionsRepository.findPlanByCode('pro')) ||
+        (await prisma.subscriptionPlan.findFirst({ where: { code: { not: 'starter' } } }));
       if (proPlan) {
         plan = proPlan;
       }
     }
 
     // 2. Calcul de la période de validité de la souscription
-    const billingCycle = payment.billingCycle || (Number(payment.amountXof) > Number(plan.priceMonthlyXof) * 6 ? 'yearly' : 'monthly');
+    const billingCycle =
+      payment.billingCycle ||
+      (Number(payment.amountXof) > Number(plan.priceMonthlyXof) * 6 ? 'yearly' : 'monthly');
     const durationDays = billingCycle === 'yearly' ? 365 : 30;
 
     let startDate = new Date();
@@ -613,8 +638,8 @@ export class SubscriptionsService {
 
     // Mettre à jour le paiement avec le PDF de la facture
     const updatedPayment = await subscriptionsRepository.validatePayment(
-      paymentId,
-      superadminId,
+      payment.id,
+      validatedBy,
       relativePdfPath
     );
 
@@ -687,7 +712,7 @@ export class SubscriptionsService {
           organizationId,
           type: 'SUBSCRIPTION_PAYMENT_VALIDATED',
           title: '✅ Abonnement activé & Facture disponible',
-          message: `Votre paiement pour le forfait ${plan.name} a été validé par le super administrateur. Votre facture ${payment.paymentReference} est prête au téléchargement.`,
+          message: `Votre paiement pour le forfait ${plan.name} a été validé par ${sourceLabel}. Votre facture ${payment.paymentReference} est prête au téléchargement.`,
           channels: ['in_app'],
         },
       });
@@ -695,8 +720,473 @@ export class SubscriptionsService {
       logger.warn(`[Subscription] Notification in-app non créée: ${notifErr.message}`);
     }
 
-    logger.info(`[Subscription] Paiement ${payment.paymentReference} VALIDÉ par le superadmin ${superadminId}. Abonnement ${plan.name} activé jusqu'au ${endDate.toISOString()}`);
+    logger.info(`[Subscription] Paiement ${payment.paymentReference} VALIDÉ (${validatedBy}). Abonnement ${plan.name} activé jusqu'au ${endDate.toISOString()}`);
     return updatedPayment;
+  }
+
+  // ===========================================================================
+  // AGRÉGATEUR DE PAIEMENT SASPAY (https://docs.saspay.me/)
+  // ===========================================================================
+
+  getSaspayConfig() {
+    return {
+      configured: saspayClient.isConfigured(),
+      mode: saspayClient.getMode(),
+      webhookConfigured: Boolean(env.SASPAY_WEBHOOK_SECRET),
+      supportedModes: ['checkout', 'softpay'] as const,
+      supportedNetworks: [
+        { code: 'wave_ci', label: 'Wave Côte d’Ivoire', country: 'CI' },
+        { code: 'orange_ci', label: 'Orange Money CI', country: 'CI' },
+        { code: 'mtn_ci', label: 'MTN Mobile Money CI', country: 'CI' },
+        { code: 'moov_ci', label: 'Moov Money CI', country: 'CI' },
+        { code: 'mtn_bj', label: 'MTN MoMo Bénin', country: 'BJ' },
+        { code: 'moov_bj', label: 'Moov Money Bénin', country: 'BJ' },
+        { code: 'wave_sn', label: 'Wave Sénégal', country: 'SN' },
+        { code: 'orange_sn', label: 'Orange Money Sénégal', country: 'SN' },
+      ],
+    };
+  }
+
+  /**
+   * Initie un encaissement d'abonnement via SasPay (Checkout hébergé ou Softpay Push direct)
+   */
+  async initiateSaspayPayment(
+    organizationId: string,
+    userId: string,
+    data: {
+      planId: string;
+      billingCycle: 'monthly' | 'yearly';
+      mode: 'checkout' | 'softpay';
+      country?: string;
+      network?: string;
+      phone?: string;
+      returnUrl?: string;
+    }
+  ) {
+    if (!saspayClient.isConfigured()) {
+      throw new BadRequestError(
+        "Le paiement en ligne SasPay n'est pas encore activé sur cet environnement (clé API SasPay manquante). Utilisez la déclaration manuelle ou configurez SASPAY_SECRET_KEY."
+      );
+    }
+
+    const plan = await subscriptionsRepository.findPlanById(data.planId);
+    if (!plan || !plan.isActive) {
+      throw new NotFoundError("Le plan sélectionné n'existe pas ou est inactif");
+    }
+
+    // Calcul du prix final conforme aux paramètres du plan
+    const baseMonthly = Number(plan.priceMonthlyXof);
+    if (baseMonthly <= 0) {
+      throw new BadRequestError("Le forfait gratuit ne nécessite pas de paiement via SasPay.");
+    }
+
+    const discountPercent = Number(plan.yearlyDiscountPercent ?? 20);
+    const price =
+      data.billingCycle === 'yearly'
+        ? Math.round(baseMonthly * 12 * (1 - discountPercent / 100))
+        : Math.round(baseMonthly);
+
+    // Contrôle préventif des quotas en cas de rétrogradation (downgrade)
+    const usage = await getOrganizationUsage(organizationId);
+    const activeStaffCount = await prisma.user.count({
+      where: {
+        organizationId,
+        isActive: true,
+        role: { in: ['admin', 'manager', 'accountant', 'owner'] },
+      },
+    });
+    const targetFeatures = parsePlanFeatures(plan.features);
+    const { maxStaff: targetMaxStaff } = getPlanExtendedQuotas(plan.code, targetFeatures);
+
+    const exceeded: string[] = [];
+    if (plan.maxProperties < 9999 && usage.properties > plan.maxProperties) {
+      exceeded.push(`${usage.properties} bien(s) actif(s) pour un maximum de ${plan.maxProperties}`);
+    }
+    if (plan.maxLots < 9999 && usage.lots > plan.maxLots) {
+      exceeded.push(`${usage.lots} lot(s)/immeuble(s) pour un maximum de ${plan.maxLots}`);
+    }
+    if (plan.maxTenants < 9999 && usage.tenants > plan.maxTenants) {
+      exceeded.push(`${usage.tenants} locataire(s) actif(s) pour un maximum de ${plan.maxTenants}`);
+    }
+    if (targetMaxStaff < 9999 && activeStaffCount > targetMaxStaff) {
+      exceeded.push(`${activeStaffCount} collaborateur(s) actif(s) pour un maximum de ${targetMaxStaff}`);
+    }
+
+    if (exceeded.length > 0) {
+      throw new BadRequestError(
+        `Impossible de passer au forfait ${plan.name} car votre utilisation actuelle dépasse ses quotas : ${exceeded.join(' ; ')}.`
+      );
+    }
+
+    // Récupérer l'abonnement actif, l'organisation et l'utilisateur payeur
+    const [existingSub, org, payer] = await Promise.all([
+      subscriptionsRepository.getActiveSubscription(organizationId),
+      prisma.organization.findUnique({ where: { id: organizationId } }),
+      prisma.user.findUnique({ where: { id: userId } }),
+    ]);
+
+    let activeSub = existingSub;
+    if (!activeSub) {
+      activeSub = (await subscriptionsRepository.createSubscription({
+        organizationId,
+        planId: plan.id,
+        startDate: new Date(),
+        endDate: new Date(),
+        status: 'suspended',
+      })) as any;
+    }
+
+    const paymentReference = generateReference('SUB');
+    const cycleLabel = data.billingCycle === 'yearly' ? 'Annuel (12 mois)' : 'Mensuel (30 jours)';
+    const description = `Abonnement Naforo ${plan.name} (${cycleLabel}) - ${paymentReference}`;
+    const backofficeBase = (env.BACKOFFICE_URL || env.FRONTEND_URL).replace(/\/$/, '');
+    const returnUrl = data.returnUrl
+      ? `${data.returnUrl}${data.returnUrl.includes('?') ? '&' : '?'}saspay_ref=${encodeURIComponent(paymentReference)}`
+      : `${backofficeBase}/subscription?saspay_ref=${encodeURIComponent(paymentReference)}`;
+
+    const customerEmail = payer?.email || org?.email || 'client@naforo.company';
+    const customerFirstName = payer?.firstName || org?.name || 'Client';
+    const customerLastName = payer?.lastName || 'Naforo';
+    const customerName = `${customerFirstName} ${customerLastName}`.trim();
+
+    let saspayId = '';
+    let checkoutUrl: string | undefined;
+    let instructions: string | undefined;
+    let saspayStatus: string = 'pending';
+
+    if (data.mode === 'softpay') {
+      const softpayRes = await saspayClient.initiateSoftpay({
+        amountXof: price,
+        currency: 'XOF',
+        country: (data.country || 'CI').toUpperCase(),
+        network: data.network!,
+        description,
+        customer: {
+          email: customerEmail,
+          firstName: customerFirstName,
+          lastName: customerLastName,
+          phone: data.phone!,
+        },
+        idempotencyKey: paymentReference,
+      });
+
+      saspayId = softpayRes.id;
+      checkoutUrl = softpayRes.checkoutUrl;
+      instructions = softpayRes.instructions || softpayRes.message;
+      saspayStatus = softpayRes.status;
+    } else {
+      const sessionRes = await saspayClient.createCheckoutSession({
+        amountXof: price,
+        currency: 'XOF',
+        description,
+        customerEmail,
+        customerName,
+        returnUrl,
+        idempotencyKey: paymentReference,
+      });
+
+      saspayId = sessionRes.id;
+      checkoutUrl = sessionRes.checkoutUrl;
+      saspayStatus = sessionRes.status;
+    }
+
+    // Enregistrer le paiement d'abonnement en attente avec l'identifiant SasPay
+    const payment = await subscriptionsRepository.createPayment({
+      paymentReference,
+      organizationId,
+      subscriptionId: activeSub!.id,
+      targetPlanId: plan.id,
+      billingCycle: data.billingCycle,
+      amountXof: price,
+      paymentMethod: 'saspay',
+      transactionNumber: saspayId,
+      paymentDate: new Date(),
+    });
+
+    // Journaliser l'initiation dans AuditLog (permet de retrouver le mode checkout vs softpay lors de la vérification)
+    try {
+      await prisma.auditLog.create({
+        data: {
+          organizationId,
+          userId,
+          action: 'SASPAY_PAYMENT_INITIATED',
+          entityType: 'SUBSCRIPTION_PAYMENT',
+          entityId: payment.id,
+          newData: {
+            paymentReference,
+            saspayId,
+            mode: data.mode,
+            gatewayMode: saspayClient.getMode(),
+            planCode: plan.code,
+            billingCycle: data.billingCycle,
+            amountXof: price,
+            checkoutUrl: checkoutUrl || null,
+          },
+        },
+      });
+    } catch (auditErr: any) {
+      logger.warn(`[SasPay] Impossible d'enregistrer AuditLog: ${auditErr.message}`);
+    }
+
+    logger.info(
+      `[SasPay] Paiement ${paymentReference} initié (${data.mode}, ${saspayClient.getMode()}) — saspayId=${saspayId}, montant=${price} XOF`
+    );
+
+    return {
+      payment,
+      paymentReference,
+      saspayId,
+      mode: data.mode,
+      gatewayMode: saspayClient.getMode(),
+      checkoutUrl: checkoutUrl || null,
+      instructions: instructions || null,
+      status: saspayStatus,
+    };
+  }
+
+  /**
+   * Vérifie l'état réel d'un paiement SasPay côté serveur et active immédiatement l'abonnement si confirmé
+   */
+  async verifySaspayPayment(referenceOrId: string, organizationId: string) {
+    const payment = await subscriptionsRepository.findPaymentByReferenceOrTransaction(referenceOrId);
+    if (!payment || payment.organizationId !== organizationId) {
+      throw new NotFoundError("Paiement d'abonnement SasPay introuvable");
+    }
+
+    if (payment.status === 'validated') {
+      return {
+        status: 'validated',
+        activated: true,
+        payment,
+        message: 'Votre abonnement est déjà activé et confirmé.',
+      };
+    }
+
+    if (payment.status === 'rejected') {
+      return {
+        status: 'rejected',
+        activated: false,
+        payment,
+        message: payment.rejectionReason || 'Ce paiement a été refusé ou annulé.',
+      };
+    }
+
+    if (!payment.transactionNumber) {
+      throw new BadRequestError("Identifiant de transaction SasPay manquant pour ce paiement.");
+    }
+
+    // Déterminer le mode d'initiation (checkout vs softpay) depuis AuditLog
+    const initLog = await prisma.auditLog.findFirst({
+      where: {
+        entityType: 'SUBSCRIPTION_PAYMENT',
+        entityId: payment.id,
+        action: 'SASPAY_PAYMENT_INITIATED',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const initMode = (initLog?.newData as any)?.mode || 'checkout';
+
+    let gatewayCheck;
+    if (initMode === 'softpay') {
+      gatewayCheck = await saspayClient.verifyPayment(payment.transactionNumber);
+    } else {
+      const sessionCheck = await saspayClient.getCheckoutSession(payment.transactionNumber);
+      // Si la session expose un transactionId, revérifier directement via /payments/{id}/verify/ (bonne pratique docs.saspay.me)
+      if (sessionCheck.transactionId) {
+        try {
+          gatewayCheck = await saspayClient.verifyPayment(sessionCheck.transactionId);
+        } catch {
+          gatewayCheck = sessionCheck;
+        }
+      } else {
+        gatewayCheck = sessionCheck;
+      }
+    }
+
+    if (gatewayCheck.status === 'success') {
+      const activatedPayment = await this.activateSubscriptionPayment(
+        payment,
+        'saspay_gateway',
+        'la passerelle SasPay (paiement instantané)'
+      );
+      return {
+        status: 'validated',
+        activated: true,
+        payment: activatedPayment,
+        gatewayStatus: gatewayCheck.rawStatus,
+        message: 'Paiement confirmé par SasPay ! Votre abonnement a été activé automatiquement.',
+      };
+    }
+
+    if (gatewayCheck.status === 'failed') {
+      const rejected = await subscriptionsRepository.rejectPayment(
+        payment.id,
+        `Paiement ${gatewayCheck.rawStatus} sur SasPay`
+      );
+      return {
+        status: 'rejected',
+        activated: false,
+        payment: rejected,
+        gatewayStatus: gatewayCheck.rawStatus,
+        message: 'Le paiement a échoué ou a été annulé sur SasPay.',
+      };
+    }
+
+    return {
+      status: 'pending',
+      activated: false,
+      payment,
+      gatewayStatus: gatewayCheck.rawStatus,
+      message: 'Paiement toujours en cours de confirmation sur SasPay.',
+    };
+  }
+
+  /**
+   * Traite les webhooks entrants SasPay (POST /api/v1/subscriptions/webhooks/saspay)
+   * - Vérifie la signature HMAC-SHA256 + protection anti-rejeu <= 300s
+   * - Revérifie côté serveur via GET /payments/{id}/verify/ avant activation (recommandation docs.saspay.me)
+   */
+  async handleSaspayWebhook(params: {
+    rawBody: string;
+    signatureHeader?: string;
+    timestampHeader?: string;
+    payload: any;
+  }) {
+    // 1. Vérification de signature cryptographique si SASPAY_WEBHOOK_SECRET est configuré (obligatoire en production)
+    if (env.SASPAY_WEBHOOK_SECRET || env.NODE_ENV === 'production') {
+      const check = verifySaspayWebhookSignature({
+        rawBody: params.rawBody,
+        signatureHeader: params.signatureHeader,
+        timestampHeader: params.timestampHeader,
+      });
+
+      if (!check.valid) {
+        logger.warn(`[SasPay Webhook] Signature rejetée : ${check.reason}`);
+        throw new UnauthorizedError(check.reason || 'Signature webhook SasPay invalide');
+      }
+    }
+
+    const payload = params.payload || {};
+    const event = String(payload.event || payload.type || '').trim().toLowerCase();
+    const data = payload.data || payload;
+
+    // 2. Événement de test depuis le tableau de bord SasPay
+    if (event === 'webhook.test') {
+      logger.info('[SasPay Webhook] Événement webhook.test reçu et acquitté avec succès.');
+      return { received: true, event: 'webhook.test', processed: true };
+    }
+
+    // 3. Extraction des identifiants possibles (session_id, transaction id, référence SUB-...)
+    const candidateIds: string[] = [];
+    if (data?.checkout_session_id) candidateIds.push(String(data.checkout_session_id));
+    if (data?.session_id) candidateIds.push(String(data.session_id));
+    if (data?.id) candidateIds.push(String(data.id));
+    if (data?.reference) candidateIds.push(String(data.reference));
+
+    // Extraire aussi une référence SUB-... depuis le champ description
+    const desc = String(data?.description || '');
+    const subRefMatch = desc.match(/SUB-[A-Z0-9-]+/i);
+    if (subRefMatch) {
+      candidateIds.push(subRefMatch[0]);
+    }
+
+    let payment = null;
+    for (const candidate of candidateIds) {
+      payment = await subscriptionsRepository.findPaymentByReferenceOrTransaction(candidate);
+      if (payment) break;
+    }
+
+    if (!payment) {
+      logger.warn('[SasPay Webhook] Aucun paiement d’abonnement correspondant trouvé', {
+        event,
+        candidateIds,
+      });
+      return { received: true, event, processed: false, reason: 'payment_not_found' };
+    }
+
+    // 4. Déterminer le statut métier de l'événement
+    const statusFromEvent =
+      event === 'transaction.success'
+        ? 'success'
+        : event === 'transaction.failed' || event === 'transaction.cancelled'
+        ? 'failed'
+        : mapSaspayStatus(data?.status);
+
+    // 5. Idempotence : déjà validé
+    if (payment.status === 'validated') {
+      return {
+        received: true,
+        event,
+        processed: true,
+        alreadyValidated: true,
+        paymentReference: payment.paymentReference,
+      };
+    }
+
+    if (statusFromEvent === 'success') {
+      // Bonne pratique docs.saspay.me : toujours revérifier l'état auprès de l'API SasPay avant d'activer le service
+      const verifyTargetId = data?.id ? String(data.id) : payment.transactionNumber;
+      if (saspayClient.isConfigured() && verifyTargetId) {
+        const verified = await saspayClient.verifyPayment(verifyTargetId);
+        if (verified.status !== 'success') {
+          logger.warn(
+            `[SasPay Webhook] Discordance entre webhook (${event}) et vérification serveur (${verified.rawStatus}) pour ${payment.paymentReference}`
+          );
+          return {
+            received: true,
+            event,
+            processed: false,
+            reason: 'server_verification_not_confirmed',
+            gatewayStatus: verified.rawStatus,
+          };
+        }
+      }
+
+      // Mettre à jour le transactionNumber avec l'ID final de transaction si différent
+      if (data?.id && String(data.id) !== payment.transactionNumber) {
+        await subscriptionsRepository.updatePaymentTransactionNumber(payment.id, String(data.id));
+        payment.transactionNumber = String(data.id);
+      }
+
+      await this.activateSubscriptionPayment(
+        payment,
+        'saspay_webhook',
+        'la passerelle SasPay (confirmation webhook)'
+      );
+
+      return {
+        received: true,
+        event,
+        processed: true,
+        activated: true,
+        paymentReference: payment.paymentReference,
+      };
+    }
+
+    if (statusFromEvent === 'failed') {
+      if (payment.status === 'pending') {
+        await subscriptionsRepository.rejectPayment(
+          payment.id,
+          `Échec / annulation signalé par SasPay (${event || data?.status || 'FAILED'})`
+        );
+      }
+      return {
+        received: true,
+        event,
+        processed: true,
+        activated: false,
+        status: 'rejected',
+        paymentReference: payment.paymentReference,
+      };
+    }
+
+    return {
+      received: true,
+      event,
+      processed: false,
+      status: 'pending',
+      paymentReference: payment.paymentReference,
+    };
   }
 
   // --- EXPORT INTÉGRAL DE SAUVEGARDE (POLITIQUE DE RÉTENTION) ---

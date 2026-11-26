@@ -24,7 +24,17 @@ app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cookieParser());
 app.use(compression());
-app.use(express.json({ limit: '5mb' }));
+app.use(
+  express.json({
+    limit: '5mb',
+    verify: (req: any, _res, buf) => {
+      // Conserver le corps brut pour la vérification cryptographique des webhooks (SasPay HMAC-SHA256)
+      if (buf && buf.length > 0) {
+        req.rawBody = buf.toString('utf8');
+      }
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // 2. Logging with Morgan

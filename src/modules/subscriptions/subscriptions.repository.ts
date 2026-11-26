@@ -123,6 +123,33 @@ export const subscriptionsRepository = {
     });
   },
 
+  async findPaymentByReferenceOrTransaction(
+    referenceOrTx: string
+  ): Promise<(SubscriptionPayment & { subscription: Subscription & { plan: SubscriptionPlan } }) | null> {
+    return prisma.subscriptionPayment.findFirst({
+      where: {
+        OR: [
+          { paymentReference: referenceOrTx },
+          { transactionNumber: referenceOrTx },
+          { id: referenceOrTx },
+        ],
+      },
+      include: {
+        subscription: {
+          include: { plan: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  },
+
+  async updatePaymentTransactionNumber(id: string, transactionNumber: string): Promise<SubscriptionPayment> {
+    return prisma.subscriptionPayment.update({
+      where: { id },
+      data: { transactionNumber },
+    });
+  },
+
   async updatePaymentProof(id: string, proofUrl: string): Promise<SubscriptionPayment> {
     return prisma.subscriptionPayment.update({ where: { id }, data: { proofUrl } });
   },

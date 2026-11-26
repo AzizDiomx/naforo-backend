@@ -101,6 +101,65 @@ export const subscriptionsController = {
     return sendSuccess(res, history, 'Historique des paiements d\'abonnements récupéré avec succès');
   }),
 
+  // --- AGRÉGATEUR DE PAIEMENT SASPAY (https://docs.saspay.me/) ---
+  getSaspayConfig: asyncHandler(async (_req: Request, res: Response) => {
+    const config = subscriptionsService.getSaspayConfig();
+    return sendSuccess(res, config, 'Configuration passerelle SasPay récupérée');
+  }),
+
+  initiateSaspayPayment: asyncHandler(async (req: Request, res: Response) => {
+    if (req.user!.role !== 'owner' && req.user!.role !== 'admin') {
+      throw new ForbiddenError("Seuls les propriétaires et administrateurs peuvent initier un paiement d'abonnement");
+    }
+
+    const result = await subscriptionsService.initiateSaspayPayment(
+      req.organizationId!,
+      req.user!.userId,
+      req.body
+    );
+
+    return sendSuccess(
+      res,
+      result,
+      result.mode === 'softpay'
+        ? 'Demande de paiement Mobile Money envoyée sur votre téléphone via SasPay.'
+        : 'Session de paiement sécurisée SasPay initialisée avec succès.',
+      201
+    );
+  }),
+
+  verifySaspayPayment: asyncHandler(async (req: Request, res: Response) => {
+    if (req.user!.role !== 'owner' && req.user!.role !== 'admin') {
+      throw new ForbiddenError("Privilèges insuffisants");
+    }
+
+    const { reference } = req.params;
+    const result = await subscriptionsService.verifySaspayPayment(reference, req.organizationId!);
+    return sendSuccess(res, result, result.message);
+  }),
+
+  handleSaspayWebhook: asyncHandler(async (req: Request, res: Response) => {
+    const rawBody =
+      typeof (req as any).rawBody === 'string'
+        ? (req as any).rawBody
+        : JSON.stringify(req.body || {});
+    const signatureHeader = (req.headers['x-webhook-signature'] || req.headers['X-Webhook-Signature']) as
+      | string
+      | undefined;
+    const timestampHeader = (req.headers['x-webhook-timestamp'] || req.headers['X-Webhook-Timestamp']) as
+      | string
+      | undefined;
+
+    const result = await subscriptionsService.handleSaspayWebhook({
+      rawBody,
+      signatureHeader,
+      timestampHeader,
+      payload: req.body,
+    });
+
+    return sendSuccess(res, result, 'Webhook SasPay traité');
+  }),
+
   // --- SUPERADMIN ENPOINTS ---
   getPendingPayments: asyncHandler(async (req: Request, res: Response) => {
     const status = req.query.status as string | undefined;
