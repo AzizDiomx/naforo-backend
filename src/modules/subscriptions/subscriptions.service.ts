@@ -760,6 +760,7 @@ export class SubscriptionsService {
       country?: string;
       network?: string;
       phone?: string;
+      otp?: string;
       returnUrl?: string;
     }
   ) {
@@ -861,6 +862,7 @@ export class SubscriptionsService {
         country: (data.country || 'CI').toUpperCase(),
         network: data.network!,
         description,
+        otp: data.otp,
         customer: {
           email: customerEmail,
           firstName: customerFirstName,
@@ -882,7 +884,12 @@ export class SubscriptionsService {
         customerEmail,
         customerName,
         returnUrl,
-        idempotencyKey: paymentReference,
+        metadata: {
+          payment_reference: paymentReference,
+          organization_id: organizationId,
+          plan_code: plan.code,
+          billing_cycle: data.billingCycle,
+        },
       });
 
       saspayId = sessionRes.id;
@@ -1076,8 +1083,9 @@ export class SubscriptionsService {
       return { received: true, event: 'webhook.test', processed: true };
     }
 
-    // 3. Extraction des identifiants possibles (session_id, transaction id, référence SUB-...)
+    // 3. Extraction des identifiants possibles (metadata, session_id, transaction id, référence SUB-...)
     const candidateIds: string[] = [];
+    if (data?.metadata?.payment_reference) candidateIds.push(String(data.metadata.payment_reference));
     if (data?.checkout_session_id) candidateIds.push(String(data.checkout_session_id));
     if (data?.session_id) candidateIds.push(String(data.session_id));
     if (data?.id) candidateIds.push(String(data.id));

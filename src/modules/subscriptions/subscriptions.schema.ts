@@ -36,6 +36,7 @@ export const InitiateSaspayPaymentSchema = z.object({
     country: z.string().length(2, 'Code pays ISO sur 2 lettres requis (ex: CI, BJ, SN)').optional(),
     network: z.string().min(2, 'Opérateur Mobile Money requis (ex: wave_ci, orange_ci, mtn_ci)').optional(),
     phone: z.string().min(8, 'Numéro de téléphone Mobile Money invalide').optional(),
+    otp: z.string().min(4, 'Code OTP Orange Money invalide').max(12).optional(),
     returnUrl: z.string().url('URL de retour invalide').optional(),
   }).superRefine((val, ctx) => {
     if (val.mode === 'softpay') {
@@ -58,6 +59,13 @@ export const InitiateSaspayPaymentSchema = z.object({
           code: z.ZodIssueCode.custom,
           path: ['phone'],
           message: 'Le numéro Mobile Money du payeur est requis pour Softpay.',
+        });
+      }
+      if (val.network?.toLowerCase() === 'orange_ci' && (!val.otp || val.otp.trim().length < 4)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['otp'],
+          message: 'Pour Orange Money CI, composez #144*82# sur votre téléphone et saisissez le code OTP obtenu.',
         });
       }
     }

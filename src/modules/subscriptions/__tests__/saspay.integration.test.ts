@@ -16,6 +16,7 @@ process.env.SASPAY_WEBHOOK_TOLERANCE_SECONDS = '300';
 
 import {
   formatSaspayAmount,
+  extractSaspayErrorMessage,
   mapSaspayStatus,
   parseWebhookTimestampMs,
   verifySaspayWebhookSignature,
@@ -206,7 +207,19 @@ async function main() {
     return { ok: false, status: 404, text: async () => JSON.stringify({ message: 'Not found' }) };
   };
 
-  await runTest('saspayClient.createCheckoutSession envoie Bearer, Idempotency-Key et retourne checkoutUrl', async () => {
+  await runTest('extractSaspayErrorMessage décode les erreurs DRF { success: false, error: { field: [...] } }', () => {
+    const msg1 = extractSaspayErrorMessage(
+      { success: false, error: { otp: ['This field is required.'], amount: ['Invalid amount'] }, code: 400 },
+      400
+    );
+    assert.ok(msg1.includes('otp: This field is required.'));
+    assert.ok(msg1.includes('amount: Invalid amount'));
+
+    const msg2 = extractSaspayErrorMessage({ detail: 'Invalid token.' }, 401);
+    assert.strictEqual(msg2, 'Invalid token.');
+  });
+
+  await runTest('saspayClient.createCheckoutSession envoie Bearer, metadata (sans Idempotency-Key) et retourne checkoutUrl', async () => {
     const res = await saspayClient.createCheckoutSession({
       amountXof: 24900,
       currency: 'XOF',
@@ -214,7 +227,7 @@ async function main() {
       customerEmail: 'owner@agence.ci',
       customerName: 'Ismaël Diomandé',
       returnUrl: 'https://backoffice.naforo.company/subscription?saspay_ref=SUB-TEST-001',
-      idempotencyKey: 'SUB-TEST-001',
+      metadata: { payment_reference: 'SUB-TEST-001' },
     });
 
     assert.strictEqual(res.id, 'sess_saspay_999');
@@ -223,9 +236,10 @@ async function main() {
 
     const lastCall = fetchCalls[fetchCalls.length - 1];
     assert.strictEqual(lastCall.headers.Authorization, 'Bearer sk_test_naforo_unit_testing_key_001');
-    assert.strictEqual(lastCall.headers['Idempotency-Key'], 'SUB-TEST-001');
+    assert.strictEqual(lastCall.headers['Idempotency-Key'], undefined);
     assert.strictEqual(lastCall.body.amount, '24900.00');
     assert.strictEqual(lastCall.body.currency, 'XOF');
+    assert.strictEqual(lastCall.body.metadata.payment_reference, 'SUB-TEST-001');
   });
 
   await runTest('saspayClient.initiateSoftpay envoie country, network et customer phone', async () => {

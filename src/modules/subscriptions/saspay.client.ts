@@ -12,7 +12,8 @@ export interface SaspayCheckoutSessionParams {
   customerEmail?: string | null;
   customerName?: string | null;
   returnUrl: string;
-  idempotencyKey: string;
+  metadata?: Record<string, string | number | boolean>;
+  idempotencyKey?: string;
 }
 
 export interface SaspayCheckoutSessionResult {
@@ -32,6 +33,7 @@ export interface SaspaySoftpayParams {
   country: string;
   network: string;
   description: string;
+  otp?: string;
   customer: {
     email: string;
     firstName: string;
@@ -79,6 +81,62 @@ export function mapSaspayStatus(rawStatus: unknown): SaspayNormalizedStatus {
     return 'failed';
   }
   return 'pending';
+}
+
+/**
+ * Extrait un message d'erreur lisible depuis n'importe quel format de réponse d'erreur SasPay / DRF :
+ * - { success: false, error: { field: ["msg"] }, code: 400 }
+ * - { message: "..." } / { detail: "..." } / { error: "..." } / { errors: { ... } }
+ */
+export function extractSaspayErrorMessage(json: any, status: number): string {
+  if (!json) {
+    return `Erreur passerelle SasPay (HTTP ${status})`;
+  }
+
+  const flattenErrors = (obj: any): string[] => {
+    if (!obj) return [];
+    if (typeof obj === 'string') return [obj];
+    if (Array.isArray(obj)) {
+      return obj.flatMap((item) => flattenErrors(item));
+    }
+    if (typeof obj === 'object') {
+      const parts: string[] = [];
+      for (const [k, v] of Object.entries(obj)) {
+        if (k === 'code' || k === 'success' || k === 'status') continue;
+        const sub = flattenErrors(v);
+        if (sub.length > 0) {
+          if (k === 'non_field_errors' || k === 'detail' || k === 'message') {
+            parts.push(sub.join(', '));
+          } else {
+            parts.push(`${k}: ${sub.join(', ')}`);
+          }
+        }
+      }
+      return parts;
+    }
+    return [];
+  };
+
+  if (typeof json === 'string') return json;
+  if (typeof json.message === 'string' && json.message.trim()) return json.message.trim();
+  if (typeof json.detail === 'string' && json.detail.trim()) return json.detail.trim();
+  if (typeof json.error === 'string' && json.error.trim()) return json.error.trim();
+  if (typeof json.error?.message === 'string' && json.error.message.trim()) return json.error.message.trim();
+
+  const fromErrorObj = flattenErrors(json.error);
+  if (fromErrorObj.length > 0) return fromErrorObj.join(' | ');
+
+  const fromErrorsObj = flattenErrors(json.errors);
+  if (fromErrorsObj.length > 0) return fromErrorsObj.join(' | ');
+
+  const fromRoot = flattenErrors(json);
+  if (fromRoot.length > 0) return fromRoot.join(' | ');
+
+  if (typeof json.rawText === 'string' && json.rawText.trim()) {
+    return json.rawText.trim().slice(0, 240);
+  }
+
+  return `Erreur passerelle SasPay (HTTP ${status})`;
 }
 
 /**
@@ -257,13 +315,9 @@ export class SaspayClient {
       }
 
       if (!response.ok) {
-        const apiMessage =
-          json?.message ||
-          json?.detail ||
-          json?.error?.message ||
-          (typeof json?.error === 'string' ? json.error : null) ||
-          `Erreur passerelle SasPay (HTTP ${response.status})`;
+        const apiMessage = extractSaspayErrorMessage(json, response.status);
         logger.error(`[SasPay] ${method} ${endpoint} failed (${response.status}): ${apiMessage}`, {
+          requestBody: body,
           response: json,
         });
         throw new BadRequestError(`SasPay : ${apiMessage}`);
@@ -284,19 +338,23 @@ export class SaspayClient {
 
   /**
    * Crée une session de Checkout hébergée SasPay (POST /checkout-sessions/)
+   * Note docs.saspay.me : /checkout-sessions/ n'utilise pas l'en-tête Idempotency-Key
    */
   async createCheckoutSession(params: SaspayCheckoutSessionParams): Promise<SaspayCheckoutSessionResult> {
     const payload: Record<string, any> = {
       amount: formatSaspayAmount(params.amountXof),
       currency: params.currency || 'XOF',
-      description: params.description,
+      description: params.description.slice(0, 250),
       return_url: params.returnUrl,
     };
 
     if (params.customerEmail) payload.customer_email = params.customerEmail;
     if (params.customerName) payload.customer_name = params.customerName;
+    if (params.metadata && Object.keys(params.metadata).length > 0) {
+      payload.metadata = params.metadata;
+    }
 
-    const res = await this.request<any>('POST', '/checkout-sessions/', payload, params.idempotencyKey);
+    const res = await this.request<any>('POST', '/checkout-sessions/', payload);
     const data = res?.data || res;
 
     if (!data?.id || !data?.checkout_url) {
@@ -321,19 +379,24 @@ export class SaspayClient {
    * Initie un paiement Mobile Money direct (Push Softpay — POST /payments/softpay/)
    */
   async initiateSoftpay(params: SaspaySoftpayParams): Promise<SaspaySoftpayResult> {
-    const payload = {
+    const cleanPhone = params.customer.phone.replace(/[\s.-]/g, '');
+    const payload: Record<string, any> = {
       amount: formatSaspayAmount(params.amountXof),
       currency: params.currency || 'XOF',
       country: params.country.toUpperCase(),
       network: params.network.toLowerCase(),
-      description: params.description,
+      description: params.description.slice(0, 250),
       customer: {
         email: params.customer.email,
         first_name: params.customer.firstName,
         last_name: params.customer.lastName,
-        phone: params.customer.phone,
+        phone: cleanPhone,
       },
     };
+
+    if (params.otp && params.otp.trim()) {
+      payload.otp = params.otp.trim();
+    }
 
     const res = await this.request<any>('POST', '/payments/softpay/', payload, params.idempotencyKey);
     const data = res?.data || res;
