@@ -236,9 +236,13 @@ export class SubscriptionsService {
       status = 'active';
     }
 
-    // Vérifier si un paiement a été soumis par l'utilisateur et attend la validation du super-admin
+    // Vérifier si un paiement manuel (hors SasPay automatique) a été soumis et attend la validation du super-admin
     const pendingPayment = await prisma.subscriptionPayment.findFirst({
-      where: { organizationId, status: 'pending' },
+      where: {
+        organizationId,
+        status: 'pending',
+        paymentMethod: { not: 'saspay' },
+      },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -509,6 +513,12 @@ export class SubscriptionsService {
       throw new BadRequestError("Ce paiement a déjà été traité");
     }
 
+    if (payment.paymentMethod === 'saspay') {
+      throw new BadRequestError(
+        "Les règlements SasPay sont validés automatiquement par la passerelle et ne nécessitent aucune validation manuelle."
+      );
+    }
+
     if (data.status === 'rejected') {
       if (!data.rejectionReason) {
         throw new BadRequestError("Un motif de rejet est requis");
@@ -705,7 +715,7 @@ export class SubscriptionsService {
       logger.warn(`[Subscription] Aucun email de contact trouvé pour l'organisation ${organizationId}. La facture n'a pas pu être envoyée par email.`);
     }
 
-    // Créer une notification interne dans la plateforme
+    // Créer une notification interne dans la plateforme (pour le client + information SuperAdmin si SasPay auto)
     try {
       await prisma.notification.create({
         data: {
@@ -716,6 +726,18 @@ export class SubscriptionsService {
           channels: ['in_app'],
         },
       });
+
+      if (payment.paymentMethod === 'saspay') {
+        await prisma.notification.create({
+          data: {
+            organizationId: null, // Super Admin (info uniquement, aucune action requise)
+            type: 'SUBSCRIPTION_PAYMENT_VALIDATED_AUTO',
+            title: '⚡ Abonnement encaissé & activé automatiquement (SasPay)',
+            message: `L'organisation "${org?.name || 'Client'}" a réglé ${Number(payment.amountXof).toLocaleString('fr-FR')} FCFA pour l'offre ${plan.name} via SasPay (${payment.paymentReference}). Abonnement activé automatiquement.`,
+            channels: ['in_app'],
+          },
+        });
+      }
     } catch (notifErr: any) {
       logger.warn(`[Subscription] Notification in-app non créée: ${notifErr.message}`);
     }
@@ -1283,7 +1305,7 @@ export class SubscriptionsService {
         _sum: { amountXof: true }
       }),
       prisma.subscriptionPayment.count({
-        where: { status: 'pending' }
+        where: { status: 'pending', paymentMethod: { not: 'saspay' } }
       }),
       prisma.organization.findMany({
         orderBy: { createdAt: 'desc' },

@@ -72,11 +72,12 @@ export async function getAdvancedStats() {
       by: ['plan'],
       _count: { _all: true },
     }),
+    // File des preuves manuelles uniquement (les paiements SasPay sont 100% automatiques)
     prisma.subscriptionPayment.count({
-      where: { status: 'pending' },
+      where: { status: 'pending', paymentMethod: { not: 'saspay' } },
     }),
     prisma.subscriptionPayment.findMany({
-      where: { status: 'pending' },
+      where: { status: 'pending', paymentMethod: { not: 'saspay' } },
       take: 5,
       orderBy: { createdAt: 'desc' },
       include: {

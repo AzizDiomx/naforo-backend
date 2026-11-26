@@ -155,11 +155,20 @@ export const subscriptionsRepository = {
   },
 
   async listPendingPayments(status?: string): Promise<any[]> {
+    // Les paiements SasPay sont 100% automatiques (aucune preuve ni validation manuelle admin).
+    // On n'affiche donc jamais un paiement SasPay en attente dans la file de validation manuelle ;
+    // seuls les paiements SasPay déjà validés (ou échoués) figurent dans l'historique comptable global.
     const whereClause: any = {};
     if (status && status !== 'all') {
       whereClause.status = status;
+      if (status === 'pending') {
+        whereClause.paymentMethod = { not: 'saspay' };
+      }
     } else if (!status) {
       whereClause.status = 'pending';
+      whereClause.paymentMethod = { not: 'saspay' };
+    } else {
+      whereClause.NOT = { status: 'pending', paymentMethod: 'saspay' };
     }
 
     const payments = await prisma.subscriptionPayment.findMany({
