@@ -117,6 +117,17 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().url().default(process.env.FRONTEND_URL || 'https://tenant.naforo.company'),
   BACKOFFICE_URL: z.string().url().default(process.env.BACKOFFICE_URL || 'https://backoffice.naforo.company'),
 
+  // SasPay Payment Aggregator (https://docs.saspay.me/)
+  SASPAY_API_URL: z.string().url().default('https://api.saspay.me/api/v1'),
+  SASPAY_SECRET_KEY: z.string().optional(),
+  SASPAY_WEBHOOK_SECRET: z.string().optional(),
+  SASPAY_WEBHOOK_TOLERANCE_SECONDS: z
+    .string()
+    .transform((v) => parseInt(v, 10))
+    .refine((v) => !isNaN(v) && v > 0, { message: 'Must be a positive integer' })
+    .or(z.number().positive())
+    .default('300'),
+
   // Logging
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly']).default('debug'),
   LOG_DIR: z.string().default('logs'),

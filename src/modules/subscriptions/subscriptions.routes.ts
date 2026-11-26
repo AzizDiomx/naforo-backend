@@ -4,7 +4,7 @@ import { authenticate } from '@/shared/middlewares/auth.middleware';
 import { authorize } from '@/shared/middlewares/rbac.middleware';
 import { validate } from '@/shared/middlewares/validate.middleware';
 import { uploadSingle } from '@/shared/middlewares/upload.middleware';
-import { CreatePlanSchema, DeclareSubscriptionPaymentSchema, ValidateSubscriptionPaymentSchema } from './subscriptions.schema';
+import { CreatePlanSchema, DeclareSubscriptionPaymentSchema, InitiateSaspayPaymentSchema, ValidateSubscriptionPaymentSchema } from './subscriptions.schema';
 
 const router = Router();
 
@@ -12,6 +12,12 @@ const router = Router();
 router.get(
   '/plans',
   subscriptionsController.listPlans
+);
+
+// Webhook serveur-à-serveur SasPay (authentifié par signature HMAC-SHA256 X-Webhook-Signature + X-Webhook-Timestamp)
+router.post(
+  '/webhooks/saspay',
+  subscriptionsController.handleSaspayWebhook
 );
 
 // Toutes les autres routes d'abonnements exigent une authentification
@@ -56,6 +62,26 @@ router.post(
   authorize('owner', 'admin'),
   validate(DeclareSubscriptionPaymentSchema),
   subscriptionsController.declarePayment
+);
+
+// --- PAIEMENT INSTANTANÉ VIA AGRÉGATEUR SASPAY ---
+router.get(
+  '/saspay/config',
+  authorize('owner', 'admin', 'super_admin'),
+  subscriptionsController.getSaspayConfig
+);
+
+router.post(
+  '/saspay/initiate',
+  authorize('owner', 'admin'),
+  validate(InitiateSaspayPaymentSchema),
+  subscriptionsController.initiateSaspayPayment
+);
+
+router.get(
+  '/saspay/verify/:reference',
+  authorize('owner', 'admin'),
+  subscriptionsController.verifySaspayPayment
 );
 
 router.post(
